@@ -1,0 +1,31 @@
+set confirm off
+set pagination off
+set disassembly-flavor intel
+
+target remote localhost:1234
+
+# Stage 1 starts in 16-bit real mode at physical 0x7c00.
+set architecture i8086
+break *0x7c00
+
+define regs16
+    info registers ax bx cx dx si di bp sp cs ds es ss ip eflags
+end
+
+define xip
+    x/10i (($cs << 4) + $eip)
+end
+
+define stepi16
+    stepi
+    xip
+end
+
+define pm32
+    set architecture i386
+    echo Switched GDB disassembly to i386 / 32-bit mode.\n
+end
+
+define regs32
+    info registers eax ebx ecx edx esi edi ebp esp eip eflags cs ds es ss
+end
