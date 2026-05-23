@@ -15,6 +15,7 @@ const FrameBufferInfo = extern struct {
     height: u16,
     bpp: u8,
 };
+
 pub const Color = struct {
     r: u8 = 0,
     g: u8 = 0,
@@ -55,79 +56,133 @@ pub const Color = struct {
     }
 };
 
-pub fn set(x: usize, y: usize, color: Color) !void {
+pub const Point = @Vector(2, usize);
+
+pub const Rect = struct {
+    origin: Point,
+    size: Point,
+
+    pub fn contains(self: Rect, p: Point) bool {
+        return p[0] >= self.origin[0] and
+            p[1] >= self.origin[1] and
+            p[0] < self.origin[0] + self.size[0] and
+            p[1] < self.origin[1] + self.size[1];
+    }
+
+    pub fn screen() Rect {
+        return Rect{
+            .origin = .{ 0, 0 },
+            .size = .{ fb_info.width, fb_info.height },
+        };
+    }
+
+    pub fn far_corner(self: Rect) Point {
+        return self.origin + self.size;
+    }
+};
+
+fn applyFn(comptime T: type) type {
+    return fn (ctx: *T, p: Point) callconv(.@"inline") ?Color;
+}
+
+pub fn render(comptime T: type, rect: Rect, ctx: *T, colorFn: applyFn(T)) !void {
     const fb_addr: usize = fb_info.address;
     const pitch: usize = fb_info.pitch;
-    const width: usize = fb_info.width;
-    const height: usize = fb_info.height;
     const bpp: u8 = fb_info.bpp;
 
-    if (x >= width or y >= height) {
+    const screen_rect = Rect.screen();
+    const rect_far_corner = rect.far_corner();
+
+    if (rect_far_corner[0] > screen_rect.size[0] or
+        rect_far_corner[1] > screen_rect.size[1])
+    {
         return error.OutOfBounds;
     }
 
+    const x = rect.origin[0];
+    const y = rect.origin[1];
+
     switch (bpp) {
         BPP_24 => {
-            const offset = y * pitch + x * 3;
-            const p: [*]volatile u8 = @ptrFromInt(fb_addr + offset);
+            // NOTE: *volatile u24 writes have not been validated on real hardware.
+            // u24 may be stored as 3 bytes by Zig (no padding), but if the compiler
+            // emits a 4-byte store it will corrupt the first channel of the next pixel.
+            var offset = y * pitch + x * 3;
+            var dy: usize = y;
+            while (dy < rect_far_corner[1]) : (dy += 1) {
+                var dx: usize = x;
+                while (dx < rect_far_corner[0]) : (dx += 1) {
+                    if (colorFn(ctx, .{ dx, dy })) |color| {
+                        const p: *volatile u24 = @ptrFromInt(fb_addr + offset);
+                        p.* = color.as_bpp24();
+                    }
 
-            p[0] = color.b;
-            p[1] = color.g;
-            p[2] = color.r;
+                    // Advance offset
+                    offset += 3;
+                }
+
+                // Move to next row
+                offset += pitch - (rect_far_corner[0] - x) * 3;
+            }
         },
         BPP_32 => {
-            const offset = y * pitch + x * 4;
-            const p: *volatile u32 = @ptrFromInt(fb_addr + offset);
+            var offset = y * pitch + x * 4;
 
-            p.* = color.as_bpp32();
+            var dy: usize = y;
+            while (dy < rect_far_corner[1]) : (dy += 1) {
+                var dx: usize = x;
+                while (dx < rect_far_corner[0]) : (dx += 1) {
+                    if (colorFn(ctx, .{ dx, dy })) |color| {
+                        const p: *volatile u32 = @ptrFromInt(fb_addr + offset);
+                        p.* = color.as_bpp32();
+                    }
+
+                    // Advance offset
+                    offset += 4;
+                }
+
+                // Move to next row
+                offset += pitch - (rect_far_corner[0] - x) * 4;
+            }
         },
         else => return error.UnsupportedBPP,
     }
 }
 
+pub fn set(x: usize, y: usize, color: Color) !void {
+    const Ctx = struct {
+        _color: Color,
+
+        inline fn call(self: *@This(), p: Point) ?Color {
+            _ = p;
+            return self._color;
+        }
+    };
+
+    var ctx: Ctx = .{ ._color = color };
+
+    try render(Ctx, .{
+        .origin = .{ x, y },
+        .size = .{ 1, 1 },
+    }, &ctx, Ctx.call);
+}
+
+pub fn fill_rect(rect: Rect, color: Color) !void {
+    const P = struct {
+        const Self = @This();
+        _color: Color,
+
+        inline fn call(self: *Self, p: Point) ?Color {
+            _ = p;
+            return self._color;
+        }
+    };
+
+    var p: P = .{ ._color = color };
+
+    try render(P, rect, &p, P.call);
+}
+
 pub fn fill(color: Color) !void {
-    const fb_addr: usize = fb_info.address;
-    const width: usize = fb_info.width;
-    const height: usize = fb_info.height;
-    const pitch: usize = fb_info.pitch;
-    const bpp: u8 = fb_info.bpp;
-
-    switch (bpp) {
-        BPP_24 => {
-            const fb: [*]volatile u8 = @ptrFromInt(fb_addr);
-
-            var y: usize = 0;
-            while (y < height) : (y += 1) {
-                const row = y * pitch;
-
-                var x: usize = 0;
-                while (x < width) : (x += 1) {
-                    const off = row + x * 3;
-
-                    fb[off + 0] = color.b;
-                    fb[off + 1] = color.g;
-                    fb[off + 2] = color.r;
-                }
-            }
-        },
-        BPP_32 => {
-            const fb: [*]volatile u8 = @ptrFromInt(fb_addr);
-
-            var y: usize = 0;
-            while (y < height) : (y += 1) {
-                const row = y * pitch;
-
-                var x: usize = 0;
-                while (x < width) : (x += 1) {
-                    const off = row + x * 4;
-
-                    fb[off + 0] = color.b;
-                    fb[off + 1] = color.g;
-                    fb[off + 2] = color.r;
-                    fb[off + 3] = 0;
-                }
-            }
-        },
-        else => return error.UnsupportedBPP,
-    }
+    try fill_rect(Rect.screen(), color);
 }

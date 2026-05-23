@@ -1,5 +1,5 @@
 const kmain = @import("../../kmain.zig").kmain;
-const panic = @import("../../panic.zig").panic;
+const kpanic = @import("../../panic.zig");
 const cpu = @import("cpu.zig");
 
 /// x86 protected-mode entry: loads data segments, sets up the stack, and
@@ -41,6 +41,6 @@ comptime {
 }
 
 export fn kentry() callconv(.c) noreturn {
-    kmain() catch |err| panic(err);
+    kmain() catch |err| kpanic.on_err(err);
     cpu.halt();
 }

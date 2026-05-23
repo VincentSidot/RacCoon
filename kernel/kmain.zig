@@ -1,3 +1,4 @@
+const screen = @import("drivers/framebuffer.zig");
 const text = @import("drivers/tty.zig");
 const Writer = text.Writer;
 
