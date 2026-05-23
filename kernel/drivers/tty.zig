@@ -1,5 +1,6 @@
 const screen = @import("framebuffer.zig");
 const Color = screen.Color;
+const icons = @import("../font/icons.zig");
 
 const glyph_table = @import("../font/font8x8.zig").font8x8_basic;
 
@@ -44,29 +45,59 @@ pub const Writer = struct {
     }
 };
 
-pub fn drawChar(px: usize, py: usize, ch: u8, fg: ?Color, bg: ?Color) !void {
-    if (ch >= 128) {
-        return error.InvalidCharacter;
-    }
+pub fn drawSprite(px: usize, py: usize, sprite: icons.Sprite, scale: usize) !void {
+    const Ctx = struct {
+        origin: screen.Point,
+        sprite: icons.Sprite,
+        scale: usize,
 
-    const glyph: [8]u8 = glyph_table[ch];
-
-    var dy: u8 = 0;
-    while (dy < Font.height) : (dy += 1) {
-        const row: u8 = glyph[dy];
-
-        var dx: u8 = 0;
-        while (dx < Font.width) : (dx += 1) {
-            const mask: u8 = @as(u8, 1) << @intCast(dx);
-            const maybe_color: ?Color = if ((row & mask) != 0) fg else bg;
-
-            if (maybe_color) |color| {
-                try screen.set(
-                    px + @as(usize, dx),
-                    py + @as(usize, dy),
-                    color,
-                );
-            }
+        inline fn call(self: *@This(), p: screen.Point) ?Color {
+            const sx = (p[0] - self.origin[0]) / self.scale;
+            const sy = (p[1] - self.origin[1]) / self.scale;
+            const idx = self.sprite.pixels[sy * self.sprite.width + sx];
+            if (idx == icons.transparent) return null;
+            return self.sprite.palette[idx];
         }
-    }
+    };
+
+    var ctx: Ctx = .{
+        .origin = .{ px, py },
+        .sprite = sprite,
+        .scale = scale,
+    };
+
+    try screen.render(Ctx, .{
+        .origin = .{ px, py },
+        .size = .{ sprite.width * scale, sprite.height * scale },
+    }, &ctx, Ctx.call);
+}
+
+pub fn drawChar(px: usize, py: usize, ch: u8, fg: ?Color, bg: ?Color) !void {
+    if (ch >= 128) return error.InvalidCharacter;
+
+    const Ctx = struct {
+        origin: screen.Point,
+        glyph: [Font.height]u8,
+        fg: ?Color,
+        bg: ?Color,
+
+        inline fn call(self: *@This(), p: screen.Point) ?Color {
+            const dx = p[0] - self.origin[0];
+            const dy = p[1] - self.origin[1];
+            const mask: u8 = @as(u8, 1) << @intCast(dx);
+            return if ((self.glyph[dy] & mask) != 0) self.fg else self.bg;
+        }
+    };
+
+    var ctx: Ctx = .{
+        .origin = .{ px, py },
+        .glyph = glyph_table[ch],
+        .fg = fg,
+        .bg = bg,
+    };
+
+    try screen.render(Ctx, .{
+        .origin = .{ px, py },
+        .size = .{ Font.width, Font.height },
+    }, &ctx, Ctx.call);
 }
