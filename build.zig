@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "stage2",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("kernel/main.zig"),
+            .root_source_file = b.path("kernel/entrypoint.zig"),
 
             .target = target,
             .optimize = optimize,
