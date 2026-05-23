@@ -1,6 +1,6 @@
 const std = @import("std");
-const screen = @import("screen.zig");
-const text = @import("text.zig");
+const screen = @import("drivers/framebuffer.zig");
+const text = @import("drivers/tty.zig");
 
 const Color = screen.Color;
 const Writer = text.Writer;

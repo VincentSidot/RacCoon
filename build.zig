@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "stage2",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = b.path("kernel/main.zig"),
 
             .target = target,
             .optimize = optimize,
@@ -28,7 +28,7 @@ pub fn build(b: *std.Build) void {
             .imports = &.{},
         }),
     });
-    exe.setLinkerScript(b.path("linker/stage2.ld"));
+    exe.setLinkerScript(b.path("boot/stage2.ld"));
 
     // Emit the executable as a flat binary
     const stage2_bin = b.addObjCopy(exe.getEmittedBin(), .{
@@ -38,7 +38,7 @@ pub fn build(b: *std.Build) void {
     // Build the bootable binary
     const boot_image_builder = b.addSystemCommand(&.{"bash"});
     boot_image_builder.addFileArg(b.path("scripts/build.sh"));
-    boot_image_builder.addFileArg(b.path("asm/stage1.s"));
+    boot_image_builder.addFileArg(b.path("boot/stage1.s"));
     boot_image_builder.addFileArg(stage2_bin.getOutput());
 
     const boot_image_path = boot_image_builder.addOutputFileArg("boot.bin");

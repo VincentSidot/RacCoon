@@ -1,4 +1,4 @@
-const utils = @import("utils.zig");
+const utils = @import("../lib/math.zig");
 const clamp = utils.clamp;
 
 const BPP_24: u8 = 24;

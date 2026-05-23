@@ -1,7 +1,7 @@
-const screen = @import("screen.zig");
+const screen = @import("framebuffer.zig");
 const Color = screen.Color;
 
-const glyph_table = @import("glyph.zig").font8x8_basic;
+const glyph_table = @import("../font/font8x8.zig").font8x8_basic;
 
 pub const Font = struct {
     pub const width = 8;
