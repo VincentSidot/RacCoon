@@ -5,25 +5,48 @@ const text = @import("text.zig");
 const Color = screen.Color;
 const Writer = text.Writer;
 
-fn kmain() !void {
-    const width: usize = screen.info.width;
-    const height: usize = screen.info.height;
+fn debugWriter(writer: *const Writer) !void {
+    if (writer.x != 0) return error.BadX;
+    if (writer.y != 0) return error.BadY;
 
-    var y: usize = 0;
-    while (y < height) : (y += 1) {
-        var x: usize = 0;
-        while (x < width) : (x += 1) {
-            try screen.set(x, y, .{
-                .r = @intCast((x * 255) / width),
-                .g = @intCast((y * 255) / height),
-                .b = 64,
-            });
-        }
+    if (writer.fg == null) return error.FgNull;
+    if (writer.bg != null) return error.BgNotNull;
+
+    if (writer.fg) |fg| {
+        if (fg.b != 0) return error.FgBlueNotZero;
+        if (fg.g != 0) return error.FgGreenNotZero;
+        if (fg.r != 255) return error.FgRedNot255;
     }
+}
 
-    var writer: Writer = .{};
+fn kmain() !void {
+    // const width: usize = screen.info.width;
+    // const height: usize = screen.info.height;
 
-    try writer.write("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam lacus urna, tincidunt vitae mollis eget, lacinia eget turpis. Ut lacus dolor, bibendum a tincidunt ac, maximus finibus nunc. Vivamus posuere euismod augue, vel cursus magna vulputate quis. Proin lectus neque, mollis at mauris eget, suscipit feugiat libero. Aenean sed accumsan elit. Ut congue, enim vitae efficitur interdum, lacus leo feugiat ante, quis eleifend dui sem a magna. Proin sit amet ullamcorper nibh. Proin ultrices tincidunt dignissim. In hac habitasse platea dictumst. Suspendisse blandit iaculis porttitor. Sed at egestas ipsum, vitae pulvinar orci. Vestibulum et facilisis nisi. Mauris iaculis diam nec mauris commodo vestibulum. Phasellus hendrerit consectetur ipsum, sit amet mollis lacus dictum ut. ");
+    // var y: usize = 0;
+    // while (y < height) : (y += 1) {
+    //     var x: usize = 0;
+    //     while (x < width) : (x += 1) {
+    //         try screen.set(x, y, .{
+    //             .r = @intCast((x * 255) / width),
+    //             .g = @intCast((y * 255) / height),
+    //             .b = 64,
+    //         });
+    //     }
+    // }
+
+    var writer: Writer = .{
+        .x = 0,
+        .y = 0,
+        .fg = .red,
+        .bg = null,
+    };
+
+    try debugWriter(&writer);
+
+    writer.write("Lorem ipsum dolor sit amet...") catch |err| {
+        bscreen(@errorName(err));
+    };
 }
 
 export fn kentry() callconv(.c) noreturn {
@@ -37,17 +60,28 @@ export fn kentry() callconv(.c) noreturn {
 
 fn start() callconv(.naked) noreturn {
     asm volatile (
-        \\cli
-        \\movw $0x10, %ax
-        \\movw %ax, %ds
-        \\movw %ax, %es
-        \\movw %ax, %fs
-        \\movw %ax, %gs
-        \\movw %ax, %ss
-        \\movl $0x90000, %esp
-        \\movl $0x90000, %ebp
-        \\jmp kentry
+        \\ cli
+        \\ movw $0x10, %ax
+        \\ movw %ax, %ds
+        \\ movw %ax, %es
+        \\ movw %ax, %fs
+        \\ movw %ax, %gs
+        \\ movw %ax, %ss
+        \\ movl $0x90000, %esp
+        \\ movl $0x90000, %ebp
+        \\
+        \\ // Enable FPU/SSE support expected by compiler-generated code
+        \\ movl %cr0, %eax
+        \\ andl $0xFFFB, %eax    // clear EM
+        \\ orl  $0x0002, %eax    // set MP
+        \\ movl %eax, %cr0
+        \\
+        \\ movl %cr4, %eax
+        \\ orl  $0x0600, %eax    // OSFXSR | OSXMMEXCPT
+        \\ movl %eax, %cr4
+        \\ jmp kentry
     );
+    // Note: as SSE is enabled, later code that use multitasking, interrupts or FPU must save and restore FPU/SSE state per task.
 }
 
 comptime {

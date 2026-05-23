@@ -11,7 +11,7 @@ pub const Font = struct {
 pub const Writer = struct {
     x: usize = 0,
     y: usize = 0,
-    fg: ?Color = Color.rgb(255, 255, 255),
+    fg: ?Color = .white,
     bg: ?Color = null,
 
     pub fn putChar(self: *Writer, ch: u8) !void {

@@ -6,6 +6,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{
         .default_target = .{
             .cpu_arch = .x86,
+            // .cpu_model = .{ .explicit = &std.Target.x86.cpu.i386 },
             .os_tag = .freestanding,
             .ofmt = .elf,
         },
