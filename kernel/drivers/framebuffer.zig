@@ -104,17 +104,16 @@ pub fn render(comptime T: type, rect: Rect, ctx: *T, colorFn: applyFn(T)) !void 
 
     switch (bpp) {
         BPP_24 => {
-            // NOTE: *volatile u24 writes have not been validated on real hardware.
-            // u24 may be stored as 3 bytes by Zig (no padding), but if the compiler
-            // emits a 4-byte store it will corrupt the first channel of the next pixel.
             var offset = y * pitch + x * 3;
             var dy: usize = y;
             while (dy < rect_far_corner[1]) : (dy += 1) {
                 var dx: usize = x;
                 while (dx < rect_far_corner[0]) : (dx += 1) {
                     if (colorFn(ctx, .{ dx, dy })) |color| {
-                        const p: *volatile u24 = @ptrFromInt(fb_addr + offset);
-                        p.* = color.as_bpp24();
+                        const p: [*]volatile u8 = @ptrFromInt(fb_addr + offset);
+                        p[0] = color.b;
+                        p[1] = color.g;
+                        p[2] = color.r;
                     }
 
                     // Advance offset

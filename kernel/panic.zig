@@ -12,6 +12,7 @@ const Writer = text.Writer;
 const Font = text.Font;
 
 var buffer: [128]u8 = undefined;
+const default_message = "Kernel Panic, something went really wrong...";
 
 pub fn on_err(err: anyerror) noreturn {
     render(@errorName(err));
@@ -34,7 +35,6 @@ fn render(message: []const u8) noreturn {
 }
 
 fn render_simp(message: []const u8) !void {
-    const panic_panic = "Kernel Hard Panic, something went really wrong...";
 
     // Kernel panic rendering goes wrong
     try screen.fill(.blue);
@@ -44,7 +44,7 @@ fn render_simp(message: []const u8) !void {
         &buffer,
         "Kernel panic, unable to render error screen: {s}",
         .{message},
-    ) catch panic_panic;
+    ) catch default_message;
 
     const msg_pixel = msg.len * Font.width;
 
@@ -124,6 +124,8 @@ fn render_ext(message: []const u8) !void {
     ty += 1 + 14;
 
     var msg_writer = Writer{ .x = tx, .y = ty, .fg = .white, .bg = null };
+    try msg_writer.write("Error message: ");
+    msg_writer.fg = .red;
     try msg_writer.write(message);
     ty += text.Font.height + 20;
 
