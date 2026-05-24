@@ -2,36 +2,47 @@
 
 set -e
 
-# Parse arguments
 BOOTLOADER_FILE=""
-DEBUG_ENABLED=false
+DEBUG_MODE=""   # 16 | 32 | 64
 
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
-        --debug) DEBUG_ENABLED=true ;;
+        --debug16) DEBUG_MODE="16" ;;
+        --debug32) DEBUG_MODE="32" ;;
+        --debug64) DEBUG_MODE="64" ;;
+        --debug)   DEBUG_MODE="64" ;;   # zig build debug → alias for debug64
         *) BOOTLOADER_FILE="$1" ;;
     esac
     shift
 done
 
-# Run the bootloader in QEMU
-
 if [[ -z "$BOOTLOADER_FILE" ]]; then
-    echo "Usage: $0 [--debug] <bootloader_file>"
+    echo "Usage: $0 [--debug16|--debug32|--debug64] <bootloader_file>"
     exit 1
 fi
 
-if [[ "$DEBUG_ENABLED" == true ]]; then
-    echo "Debug mode enabled. Starting QEMU with GDB server on port 1234."
-    qemu-system-i386 \
-        -drive format=raw,file="$BOOTLOADER_FILE" \
-        -s -S \
-        -no-reboot \
-        -no-shutdown &
-    gdb -x .gdbinit-boot
+QEMU_ARGS=(
+    -drive format=raw,file="$BOOTLOADER_FILE"
+    -no-reboot
+)
 
-    # Close QEMU after GDB session ends
-    kill $!
+if [[ -n "$DEBUG_MODE" ]]; then
+    GDBINIT="scripts/gdb/${DEBUG_MODE}.gdb"
+
+    if [[ ! -f "$GDBINIT" ]]; then
+        echo "Error: GDB init file '$GDBINIT' not found" >&2
+        exit 1
+    fi
+
+    echo "Debug ${DEBUG_MODE}-bit | init: ${GDBINIT} | GDB server: localhost:1234"
+
+    qemu-system-x86_64 "${QEMU_ARGS[@]}" -no-shutdown -s -S &
+    QEMU_PID=$!
+
+    sleep 0.3
+    gdb -x "$GDBINIT"
+
+    kill "$QEMU_PID" 2>/dev/null || true
 else
-    qemu-system-i386 -drive format=raw,file="$BOOTLOADER_FILE"
+    qemu-system-x86_64 "${QEMU_ARGS[@]}"
 fi
