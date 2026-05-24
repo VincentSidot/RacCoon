@@ -21,7 +21,12 @@ if [[ -z "$BOOTLOADER_FILE" ]]; then
     exit 1
 fi
 
+# Hyprland window helpers (apply_window_props, save_window_size)
+# shellcheck source=hyprland.sh
+source "$(dirname "$0")/hyprland.sh"
+
 QEMU_ARGS=(
+    -name RacCoon
     -drive format=raw,file="$BOOTLOADER_FILE"
     -no-reboot
 )
@@ -38,11 +43,16 @@ if [[ -n "$DEBUG_MODE" ]]; then
 
     qemu-system-x86_64 "${QEMU_ARGS[@]}" -no-shutdown -s -S &
     QEMU_PID=$!
+    apply_window_props "$QEMU_PID" &
 
     sleep 0.3
     gdb -x "$GDBINIT"
 
     kill "$QEMU_PID" 2>/dev/null || true
 else
-    qemu-system-x86_64 "${QEMU_ARGS[@]}"
+    qemu-system-x86_64 "${QEMU_ARGS[@]}" &
+    QEMU_PID=$!
+    apply_window_props "$QEMU_PID" &
+
+    wait "$QEMU_PID"
 fi
