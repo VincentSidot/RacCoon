@@ -26,11 +26,6 @@ pub fn kmain() !void {
 
     try writer.write(message);
 
-    // const bad_ptr: *const u8 = @ptrFromInt(0x01);
-
-    // var bad_value: u8 = bad_ptr.*;
-
-    // while (bad_value > 0) : (bad_value -= 1) {
-    //     try writer.write("Uzu\n");
-    // }
+    const x: *u64 = @ptrFromInt(0xffff_ffff_ffff_fff0);
+    x.* = 123;
 }

@@ -41,11 +41,15 @@ start64:
     or  eax, 0x00000600
     mov cr4, rax
 
+    ; ── Enable Interrupts ──────────────────────────────────────────────────────
+    ; sti
+
     ; ── Jump to Zig kernel ────────────────────────────────────────────────────
     ; `call` (not `jmp`) so the pushed return address makes RSP % 16 = 8 at
     ; KENTRY, satisfying the x86-64 SysV ABI.  kentry is noreturn so the
     ; address is never consumed.
-    call KENTRY
+    sub rsp, 8 ; align stack to 16 bytes before
+    jmp KENTRY
 
     ; Should never be reached.
   .halt:

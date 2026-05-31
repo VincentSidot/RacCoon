@@ -1,5 +1,41 @@
 const std = @import("std");
 
+fn load_assembly_file(b: *std.Build, module: *std.Build.Module) !void {
+    const arch = module.resolved_target.?.result.cpu.arch;
+
+    const assembly_dir = try std.fmt.allocPrint(
+        b.allocator,
+        "kernel/arch/{s}/asm/",
+        .{@tagName(arch)},
+    );
+
+    const cwd = std.Io.Dir.cwd();
+
+    var threaded = std.Io.Threaded.init_single_threaded;
+    const io = threaded.io();
+
+    const folders = try std.Io.Dir.openDir(cwd, io, assembly_dir, .{ .iterate = true });
+    var folders_iterator = folders.iterate();
+
+    while (try folders_iterator.next(io)) |entry| {
+        if (entry.kind == .file) {
+            const path = try std.fs.path.join(b.allocator, &[_][]const u8{ assembly_dir, entry.name });
+            module.addAssemblyFile(b.path(path));
+        } else if (entry.kind == .directory) {
+            return error.FolderNotSupported;
+        }
+    }
+}
+
+fn on_error(b: *std.Build, err: anyerror) noreturn {
+    const msg = std.fmt.allocPrint(
+        b.allocator,
+        "Error {any}",
+        .{err},
+    ) catch unreachable;
+    @panic(msg);
+}
+
 pub fn build(b: *std.Build) void {
 
     // Build the 64-bit kernel executable
@@ -22,21 +58,29 @@ pub fn build(b: *std.Build) void {
     // Pass -Doptimize=Debug once that is fixed.
     const eff_optimize: std.builtin.OptimizeMode = .ReleaseSafe;
 
+    const root_module: *std.Build.Module = b.createModule(.{
+        .root_source_file = b.path("kernel/entrypoint.zig"),
+
+        .target = target,
+        .optimize = eff_optimize,
+        // .no_builtin = true,
+        .stack_protector = false, // --fno-stack-protector
+        .stack_check = false, // --fno-stack-check
+
+        .imports = &.{},
+    });
+
+    // root_module.addAssemblyFile(b.path("kernel/arch/x86/asm/idt.s"));
+    _ = load_assembly_file(b, root_module) catch |err| {
+        on_error(b, err);
+    };
+
     const exe = b.addExecutable(.{
         .name = "kernel",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("kernel/entrypoint.zig"),
-
-            .target = target,
-            .optimize = eff_optimize,
-            // .no_builtin = true,
-            .stack_protector = false, // --fno-stack-protector
-            .stack_check = false, // --fno-stack-check
-
-            .imports = &.{},
-        }),
+        .root_module = root_module,
     });
     exe.setLinkerScript(b.path("boot/kernel.ld"));
+
     // Note: do not set use_lld=true — LLD segfaults on this freestanding target in Zig 0.16.
 
     // Emit the kernel as a flat binary (loaded by the bootloader)

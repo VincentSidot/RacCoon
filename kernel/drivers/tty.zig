@@ -15,7 +15,7 @@ pub const Writer = struct {
     fg: ?Color = .white,
     bg: ?Color = null,
 
-    pub fn putChar(self: *Writer, ch: u8) !void {
+    pub fn putchar(self: *Writer, ch: u8) !void {
         switch (ch) {
             '\n' => {
                 self.x = 0;
@@ -29,7 +29,7 @@ pub const Writer = struct {
             else => {},
         }
 
-        try drawChar(self.x, self.y, ch, self.fg, self.bg);
+        try drawchar(self.x, self.y, ch, self.fg, self.bg);
 
         self.x += Font.width;
         if (self.x + Font.width > screen.info.width) {
@@ -40,12 +40,12 @@ pub const Writer = struct {
 
     pub fn write(self: *Writer, text: []const u8) !void {
         for (text) |ch| {
-            try self.putChar(ch);
+            try self.putchar(ch);
         }
     }
 };
 
-pub fn drawSprite(px: usize, py: usize, sprite: icons.Sprite, scale: usize) !void {
+pub fn draw_sprite(px: usize, py: usize, sprite: icons.Sprite, scale: usize) !void {
     const Ctx = struct {
         origin: screen.Point,
         sprite: icons.Sprite,
@@ -72,7 +72,7 @@ pub fn drawSprite(px: usize, py: usize, sprite: icons.Sprite, scale: usize) !voi
     }, &ctx, Ctx.call);
 }
 
-pub fn drawChar(px: usize, py: usize, ch: u8, fg: ?Color, bg: ?Color) !void {
+pub fn drawchar(px: usize, py: usize, ch: u8, fg: ?Color, bg: ?Color) !void {
     if (ch >= 128) return error.InvalidCharacter;
 
     const Ctx = struct {

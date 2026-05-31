@@ -81,11 +81,11 @@ pub const Rect = struct {
     }
 };
 
-fn applyFn(comptime T: type) type {
+fn apply_fn(comptime T: type) type {
     return fn (ctx: *T, p: Point) callconv(.@"inline") ?Color;
 }
 
-pub fn render(comptime T: type, rect: Rect, ctx: *T, colorFn: applyFn(T)) !void {
+pub fn render(comptime T: type, rect: Rect, ctx: *T, colorFn: apply_fn(T)) !void {
     const fb_addr: usize = fb_info.address;
     const pitch: usize = fb_info.pitch;
     const bpp: u8 = fb_info.bpp;

@@ -3,7 +3,7 @@ const std = @import("std");
 const screen = @import("drivers/framebuffer.zig");
 const text = @import("drivers/tty.zig");
 const icons = @import("font/icons.zig");
-const cpu = @import("arch/x86/cpu.zig");
+const halt = @import("arch.zig").halt;
 
 const Color = screen.Color;
 const Point = screen.Point;
@@ -15,26 +15,30 @@ var buffer: [128]u8 = undefined;
 const default_message = "Kernel Panic, something went really wrong...";
 
 pub fn on_err(err: anyerror) noreturn {
-    render(@errorName(err));
+    render(@errorName(err), null);
 }
 
-pub fn on_msg(msg: []const u8) noreturn {
-    render(msg);
+pub fn on_msg(name: []const u8) noreturn {
+    render(name, null);
+}
+
+pub fn on_msg_ext(name: []const u8, message: ?[]const u8) noreturn {
+    render(name, message);
 }
 
 pub fn unknown() noreturn {
-    render("Unknown error");
+    render("Unknown error", null);
 }
 
-fn render(message: []const u8) noreturn {
-    render_ext(message) catch {
-        render_simp(message) catch {};
+fn render(name: []const u8, message: ?[]const u8) noreturn {
+    render_ext(name, message) catch {
+        render_simp(name, message) catch {};
     };
 
-    cpu.halt();
+    halt();
 }
 
-fn render_simp(message: []const u8) !void {
+fn render_simp(name: []const u8, message: ?[]const u8) !void {
 
     // Kernel panic rendering goes wrong
     try screen.fill(.blue);
@@ -43,17 +47,23 @@ fn render_simp(message: []const u8) !void {
     const msg = std.fmt.bufPrint(
         &buffer,
         "Kernel panic, unable to render error screen: {s}",
-        .{message},
+        .{name},
     ) catch default_message;
 
-    const msg_pixel = msg.len * Font.width;
+    var msg_pixel = msg.len * Font.width;
 
     var writer: Writer = .{ .y = screen_rect.size[1] / 2, .x = (screen_rect.size[0] - msg_pixel) / 2 };
-
     try writer.write(msg);
+
+    if (message) |msg2| {
+        msg_pixel = msg2.len * Font.width;
+        writer.y += Font.height + 20;
+        writer.x = (screen_rect.size[0] - msg_pixel) / 2;
+        try writer.write(msg2);
+    }
 }
 
-fn render_ext(message: []const u8) !void {
+fn render_ext(name: []const u8, message: ?[]const u8) !void {
     const W: usize = screen.info.width;
     const H: usize = screen.info.height;
 
@@ -110,7 +120,7 @@ fn render_ext(message: []const u8) !void {
     }, border);
 
     // Raccoon
-    try text.drawSprite(card_orig[0] + pad, card_orig[1] + pad, sprite, scale);
+    try text.draw_sprite(card_orig[0] + pad, card_orig[1] + pad, sprite, scale);
 
     // Text area
     const tx = card_orig[0] + pad + sprite_w + gap;
@@ -126,8 +136,16 @@ fn render_ext(message: []const u8) !void {
     var msg_writer = Writer{ .x = tx, .y = ty, .fg = .white, .bg = null };
     try msg_writer.write("Error message: ");
     msg_writer.fg = .red;
-    try msg_writer.write(message);
+    try msg_writer.write(name);
     ty += text.Font.height + 20;
+
+    if (message) |msg| {
+        msg_writer.x = tx;
+        msg_writer.y += text.Font.height + 20;
+        msg_writer.fg = muted;
+        try msg_writer.write(msg);
+        ty += text.Font.height + 20;
+    }
 
     var footer_writer = Writer{ .x = tx, .y = ty, .fg = muted, .bg = null };
     try footer_writer.write("System halted.");
