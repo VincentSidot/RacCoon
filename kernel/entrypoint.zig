@@ -1,8 +1,10 @@
 const std = @import("std");
 const kpanic = @import("panic.zig");
-const kmain = @import("kmain.zig").kmain;
-const halt = @import("arch.zig").halt;
+const idle = @import("arch.zig").idle;
 const idt = @import("arch.zig").idt;
+const io = @import("arch.zig").io;
+const kmain = @import("kmain.zig").kmain;
+const pic = @import("arch.zig").pic;
 
 pub fn panic(
     msg: []const u8,
@@ -24,9 +26,12 @@ pub fn panic(
 ///   - FPU and SSE enabled
 ///   - Interrupts disabled (no IDT yet)
 fn kentry() linksection(".text.entry") callconv(.c) noreturn {
-    idt.init(); // Enable interrupts
+    idt.init();
+    pic.init_keyboard_only();
+    io.sti();
+
     kmain() catch |err| kpanic.on_err(err);
-    halt();
+    idle();
 }
 
 comptime {

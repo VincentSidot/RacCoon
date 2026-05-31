@@ -25,7 +25,4 @@ pub fn kmain() !void {
     };
 
     try writer.write(message);
-
-    const x: *u64 = @ptrFromInt(0xffff_ffff_ffff_fff0);
-    x.* = 123;
 }

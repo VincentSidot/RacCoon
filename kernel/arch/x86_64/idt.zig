@@ -1,5 +1,7 @@
 const std = @import("std");
 const kpanic = @import("../../panic.zig");
+const pic = @import("pic.zig");
+const io = @import("io.zig");
 
 const Idtr = packed struct {
     limit: u16,
@@ -81,13 +83,15 @@ extern fn __isr6() callconv(.naked) void;
 extern fn __isr8() callconv(.naked) void;
 extern fn __isr13() callconv(.naked) void;
 extern fn __isr14() callconv(.naked) void;
+extern fn __isr33() callconv(.naked) void;
 
-fn setupHandlers() void {
+fn setup_handlers() void {
     IdtEntry.set_gate(0, @intFromPtr(&__isr0)); // Divide by zero
     IdtEntry.set_gate(6, @intFromPtr(&__isr6)); // Invalid opcode
     IdtEntry.set_gate(8, @intFromPtr(&__isr8)); // Double fault
     IdtEntry.set_gate(13, @intFromPtr(&__isr13)); // General protection fault
     IdtEntry.set_gate(14, @intFromPtr(&__isr14)); // Page fault
+    IdtEntry.set_gate(33, @intFromPtr(&__isr33)); // Timer interrupt (IRQ0)
 }
 
 var idtr: Idtr = undefined;
@@ -95,7 +99,7 @@ var idtr: Idtr = undefined;
 extern fn __load_idt(*const Idtr) callconv(.c) void;
 
 pub fn init() void {
-    setupHandlers();
+    setup_handlers();
 
     idtr.limit = @sizeOf(@TypeOf(idt)) - 1;
     idtr.base = @intFromPtr(&idt);
@@ -103,7 +107,9 @@ pub fn init() void {
     __load_idt(&idtr);
 }
 
-export fn zig_interrupt_dispatch(frame: *InterruptFrame) callconv(.c) noreturn {
+pub var last_scancode: u8 = 0;
+
+export fn zig_interrupt_dispatch(frame: *InterruptFrame) callconv(.c) void {
     var buffer: [256]u8 = undefined;
 
     switch (frame.vector) {
@@ -143,13 +149,21 @@ export fn zig_interrupt_dispatch(frame: *InterruptFrame) callconv(.c) noreturn {
             ) catch "";
             kpanic.on_msg_ext("Page fault", msg);
         },
+        33 => {
+            last_scancode = io.inb(0x60);
+            pic.eoi(1);
+
+            // For now, let's panic on keyboard interrupts
+            const msg = std.fmt.bufPrint(
+                &buffer,
+                "Scancode: 0x{x}",
+                .{last_scancode},
+            ) catch "";
+
+            kpanic.on_msg_ext("Keyboard interrupt", msg);
+        },
         else => {
             kpanic.on_msg("Unhandled CPU exception");
         },
     }
-}
-
-fn panic_exception(message: []const u8, frame: *InterruptFrame) noreturn {
-    _ = frame;
-    kpanic.on_msg(message);
 }

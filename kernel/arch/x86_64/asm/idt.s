@@ -32,6 +32,12 @@ __isr14: // Page fault
     push $14
     jmp isr_common
 
+.global __isr33
+__isr33: // Keyboard interrupt
+    push $0
+    push $33
+    jmp isr_common
+
 isr_common:
     push %rax
     push %rbx
