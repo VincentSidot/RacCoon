@@ -54,6 +54,12 @@ zig build debug64   # kernel — long mode   (0x8400)
 
 GDB init files live in `scripts/gdb/`. Common helpers (register display, mode inspection) are in `scripts/gdb/common.gdb`.
 
+## Test
+
+```sh
+zig build test
+```
+
 ## Lint
 
 Linting uses [zlinter](https://github.com/KurtWagner/zlinter). Fetch the linter
@@ -69,6 +75,28 @@ Then run the linter:
 ```sh
 zig build lint
 ```
+
+## Git hooks
+
+Set up the project hooks once per clone:
+
+```sh
+./scripts/setup-githooks.sh
+```
+
+The `commit-msg` hook enforces:
+
+```text
+[ACTION] <message>
+```
+
+Examples:
+- `[ADD] keyboard driver`
+- `[FIX] ring buffer wraparound`
+- `[WIP] bootloader refactor`
+
+`[WIP]` commits skip `zig build lint`, `zig build`, and `zig build test`.
+All other actions run those checks before the commit is finalized.
 
 ## Project layout
 

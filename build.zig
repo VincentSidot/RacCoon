@@ -54,7 +54,6 @@ pub fn build(b: *std.Build) void {
     // the large Debug binary layout with our custom linker script, and LLD segfaults
     // on this freestanding target.  Pass -Doptimize=Debug only if/when that is fixed.
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
-    _ = optimize;
     // Hardcode ReleaseSafe: avoids ubsan/compiler_rt bloat from Debug mode that
     // breaks the self-hosted linker's section layout in Zig 0.16.
     // Pass -Doptimize=Debug once that is fixed.
@@ -173,6 +172,18 @@ pub fn build(b: *std.Build) void {
     debug64_cmd.step.dependOn(&boot_image_install.step);
     debug64_cmd.step.dependOn(&kernel_elf_install.step);
     debug64_step.dependOn(&debug64_cmd.step);
+
+    // ── test ───────────────────────────────────────────────────────────────
+    const tests_module = b.addModule("tests", .{
+        .root_source_file = b.path("kernel/tests.zig"),
+        .target = b.graph.host,
+        .optimize = optimize,
+    });
+    const unit_tests = b.addTest(.{ .root_module = tests_module });
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+
+    const test_step = b.step("test", "Run unit tests.");
+    test_step.dependOn(&run_unit_tests.step);
 
     // ── lint ───────────────────────────────────────────────────────────────
     const lint_cmd = b.step("lint", "Lint source code.");

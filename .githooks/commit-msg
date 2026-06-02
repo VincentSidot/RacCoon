@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+msg_file="${1:?missing commit message file}"
+subject="$(grep -m1 -v '^[[:space:]]*#' "$msg_file" | tr -d '\r' || true)"
+pattern='^\[([A-Z][A-Z0-9_-]*)\] .+'
+
+if [[ -z "$subject" ]] || ! [[ "$subject" =~ $pattern ]]; then
+    cat >&2 <<'EOF'
+Invalid commit message.
+Expected format: [ACTION] <message>
+Examples:
+  [ADD] keyboard driver
+  [FIX] ring buffer wraparound
+  [WIP] bootloader refactor
+EOF
+    exit 1
+fi
+
+action="${BASH_REMATCH[1]}"
+
+if [[ "$action" == "WIP" ]]; then
+    echo "WIP commit detected; skipping zig checks."
+    exit 0
+fi
+
+echo "Running zig build lint"
+zig build lint
+
+echo "Running zig build"
+zig build
+
+echo "Running zig build test"
+zig build test

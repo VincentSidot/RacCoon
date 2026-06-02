@@ -1,5 +1,4 @@
 const std = @import("std");
-const mem = std.mem;
 
 pub fn RingBuffer(comptime T: type) type {
     return struct {
