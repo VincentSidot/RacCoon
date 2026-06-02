@@ -20,10 +20,11 @@ kernel (64-bit, 0x8400)
 
 ## Requirements
 
-- [Zig](https://ziglang.org/) 0.14+
+- [Zig](https://ziglang.org/) 0.16.x
 - [FASM](https://flatassembler.net/) (flat assembler)
 - `qemu-system-x86_64`
 - `gdb` (optional, for debugging)
+- `docker` (optional, for non-linux hosts)
 
 ## Build
 
