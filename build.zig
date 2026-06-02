@@ -83,10 +83,17 @@ pub fn build(b: *std.Build) void {
 
     // Note: do not set use_lld=true — LLD segfaults on this freestanding target in Zig 0.16.
 
-    // Emit the kernel as a flat binary (loaded by the bootloader)
-    const kernel_bin = b.addObjCopy(exe.getEmittedBin(), .{
-        .format = .bin,
-    });
+    // Emit the kernel as a flat binary (loaded by the bootloader).
+    //
+    // We use GNU objcopy (binutils) rather than `b.addObjCopy` because Zig
+    // 0.16's self-hosted `zig objcopy` crashes under Rosetta with
+    // "rosetta error: bss_size overflow" on any input (the rest of the zig
+    // toolchain runs fine emulated). GNU objcopy is section-based, so the flat
+    // binary starts at the first allocatable section (.text @ 0x8400 = kentry),
+    // which is exactly what the bootloader's KENTRY trampoline expects.
+    const objcopy = b.addSystemCommand(&.{ "objcopy", "-O", "binary" });
+    objcopy.addFileArg(exe.getEmittedBin());
+    const kernel_bin = objcopy.addOutputFileArg("kernel.bin");
 
     // Install the kernel ELF to zig-out/kernel.elf for GDB symbol loading
     const kernel_elf_install = b.addInstallFile(exe.getEmittedBin(), "kernel.elf");
@@ -100,7 +107,7 @@ pub fn build(b: *std.Build) void {
     boot_image_builder.addFileArg(b.path("boot/stage1.s"));
     boot_image_builder.addFileArg(b.path("boot/stage2.s"));
     boot_image_builder.addFileArg(b.path("boot/stage3.s"));
-    boot_image_builder.addFileArg(kernel_bin.getOutput());
+    boot_image_builder.addFileArg(kernel_bin);
 
     const boot_image_path = boot_image_builder.addOutputFileArg("boot.bin");
 
@@ -143,8 +150,8 @@ pub fn build(b: *std.Build) void {
     debug64_cmd.addFileArg(boot_image_path);
 
     // ── dependencies ──────────────────────────────────────────────────────────
-    kernel_bin.step.dependOn(&exe.step);
-    boot_image_builder.step.dependOn(&kernel_bin.step);
+    objcopy.step.dependOn(&exe.step);
+    boot_image_builder.step.dependOn(&objcopy.step);
     boot_image_install.step.dependOn(&boot_image_builder.step);
 
     run_cmd.step.dependOn(&boot_image_install.step);
