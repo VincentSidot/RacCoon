@@ -1,36 +1,36 @@
 const io = @import("io.zig");
 
-const PIC1_CMD: u16 = 0x20;
-const PIC1_DATA: u16 = 0x21;
-const PIC2_CMD: u16 = 0xA0;
-const PIC2_DATA: u16 = 0xA1;
+const pic1_cmd: u16 = 0x20;
+const pic1_data: u16 = 0x21;
+const pic2_cmd: u16 = 0xA0;
+const pic2_data: u16 = 0xA1;
 
-const ICW1_INIT: u8 = 0x10;
-const ICW1_ICW4: u8 = 0x01;
-const ICW4_8086: u8 = 0x01;
+const icw1_init: u8 = 0x10;
+const icw1_icw4: u8 = 0x01;
+const icw4_8086: u8 = 0x01;
 
-pub const IRQ_BASE_MASTER: u8 = 32;
-pub const IRQ_BASE_SLAVE: u8 = 40;
-pub const KEYBOARD_VECTOR: u8 = IRQ_BASE_MASTER + 1;
+pub const irq_base_master: u8 = 32;
+pub const irq_base_slave: u8 = 40;
+pub const keyboard_vector: u8 = irq_base_master + 1;
 
-pub fn init_keyboard_only() void {
-    io.outb(PIC1_CMD, ICW1_INIT | ICW1_ICW4);
-    io.outb(PIC2_CMD, ICW1_INIT | ICW1_ICW4);
+pub fn initKeyboardOnly() void {
+    io.outb(pic1_cmd, icw1_init | icw1_icw4);
+    io.outb(pic2_cmd, icw1_init | icw1_icw4);
 
-    io.outb(PIC1_DATA, IRQ_BASE_MASTER);
-    io.outb(PIC2_DATA, IRQ_BASE_SLAVE);
+    io.outb(pic1_data, irq_base_master);
+    io.outb(pic2_data, irq_base_slave);
 
-    io.outb(PIC1_DATA, 0x04); // slave on IRQ2
-    io.outb(PIC2_DATA, 0x02); // slave identity
+    io.outb(pic1_data, 0x04); // slave on IRQ2
+    io.outb(pic2_data, 0x02); // slave identity
 
-    io.outb(PIC1_DATA, ICW4_8086);
-    io.outb(PIC2_DATA, ICW4_8086);
+    io.outb(pic1_data, icw4_8086);
+    io.outb(pic2_data, icw4_8086);
 
-    io.outb(PIC1_DATA, 0xFD); // enable IRQ1 only
-    io.outb(PIC2_DATA, 0xFF); // disable all slave IRQs
+    io.outb(pic1_data, 0xFD); // enable IRQ1 only
+    io.outb(pic2_data, 0xFF); // disable all slave IRQs
 }
 
 pub fn eoi(irq: u8) void {
-    if (irq >= 8) io.outb(PIC2_CMD, 0x20);
-    io.outb(PIC1_CMD, 0x20);
+    if (irq >= 8) io.outb(pic2_cmd, 0x20);
+    io.outb(pic1_cmd, 0x20);
 }

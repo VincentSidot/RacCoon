@@ -33,12 +33,12 @@ const IdtEntry = packed struct {
     // index 1: kernel code segment <-- this is the one we want to use for our interrupt handlers
     // index 2: kernel data segment
     // TODO: I need to be able to ensure alignment with the stage2.s gdt64 setup
-    const KERNEL_CODE_SELECTOR: u16 = 0x08; // TODO: This should be defined in the GDT module
+    const kernel_code_selector: u16 = 0x08; // TODO: This should be defined in the GDT module
 
-    fn set_gate(vector: u8, handler: usize) void {
+    fn setGate(vector: u8, handler: usize) void {
         idt[vector] = .{
             .offset_low = @truncate(handler),
-            .selector = KERNEL_CODE_SELECTOR,
+            .selector = kernel_code_selector,
             .ist = 0,
             .try_attr = 0x8E, // Interrupt gate, present, DPL=0
             .offset_mid = @truncate(handler >> 16),
@@ -50,6 +50,7 @@ const IdtEntry = packed struct {
 
 pub const InterruptFrame = extern struct {
     // Registers snapshot by the CPU during an interrupt
+    // zlinter-disable field_naming - field names mirror x86-64 CPU registers
     r15: u64,
     r14: u64,
     r13: u64,
@@ -72,11 +73,12 @@ pub const InterruptFrame = extern struct {
     rip: u64,
     cs: u64,
     rflags: u64,
+    // zlinter-enable field_naming
 };
 
-const IDT_LEN = 256;
+const idt_len = 256;
 
-var idt: [IDT_LEN]IdtEntry = [_]IdtEntry{IdtEntry.missing} ** IDT_LEN;
+var idt: [idt_len]IdtEntry = [_]IdtEntry{IdtEntry.missing} ** idt_len;
 
 extern fn __isr0() callconv(.naked) void;
 extern fn __isr6() callconv(.naked) void;
@@ -85,13 +87,13 @@ extern fn __isr13() callconv(.naked) void;
 extern fn __isr14() callconv(.naked) void;
 extern fn __isr33() callconv(.naked) void;
 
-fn setup_handlers() void {
-    IdtEntry.set_gate(0, @intFromPtr(&__isr0)); // Divide by zero
-    IdtEntry.set_gate(6, @intFromPtr(&__isr6)); // Invalid opcode
-    IdtEntry.set_gate(8, @intFromPtr(&__isr8)); // Double fault
-    IdtEntry.set_gate(13, @intFromPtr(&__isr13)); // General protection fault
-    IdtEntry.set_gate(14, @intFromPtr(&__isr14)); // Page fault
-    IdtEntry.set_gate(33, @intFromPtr(&__isr33)); // Timer interrupt (IRQ0)
+fn setupHandlers() void {
+    IdtEntry.setGate(0, @intFromPtr(&__isr0)); // Divide by zero
+    IdtEntry.setGate(6, @intFromPtr(&__isr6)); // Invalid opcode
+    IdtEntry.setGate(8, @intFromPtr(&__isr8)); // Double fault
+    IdtEntry.setGate(13, @intFromPtr(&__isr13)); // General protection fault
+    IdtEntry.setGate(14, @intFromPtr(&__isr14)); // Page fault
+    IdtEntry.setGate(33, @intFromPtr(&__isr33)); // Timer interrupt (IRQ0)
 }
 
 var idtr: Idtr = undefined;
@@ -99,7 +101,7 @@ var idtr: Idtr = undefined;
 extern fn __load_idt(*const Idtr) callconv(.c) void;
 
 pub fn init() void {
-    setup_handlers();
+    setupHandlers();
 
     idtr.limit = @sizeOf(@TypeOf(idt)) - 1;
     idtr.base = @intFromPtr(&idt);
@@ -109,15 +111,15 @@ pub fn init() void {
 
 pub var last_scancode: u8 = 0;
 
-export fn zig_interrupt_dispatch(frame: *InterruptFrame) callconv(.c) void {
+export fn zigInterruptDispatch(frame: *InterruptFrame) callconv(.c) void {
     var buffer: [256]u8 = undefined;
 
     switch (frame.vector) {
         0 => {
-            kpanic.on_msg("Divide by zero");
+            kpanic.onMsg("Divide by zero");
         },
         6 => {
-            kpanic.on_msg("Invalid opcode");
+            kpanic.onMsg("Invalid opcode");
         },
         8 => {
             const msg = std.fmt.bufPrint(
@@ -125,7 +127,7 @@ export fn zig_interrupt_dispatch(frame: *InterruptFrame) callconv(.c) void {
                 "Error code: 0x{x}",
                 .{frame.error_code},
             ) catch "";
-            kpanic.on_msg_ext("Double fault", msg);
+            kpanic.onMsgExt("Double fault", msg);
         },
         13 => {
             const msg = std.fmt.bufPrint(
@@ -133,7 +135,7 @@ export fn zig_interrupt_dispatch(frame: *InterruptFrame) callconv(.c) void {
                 "Error code: 0x{x}",
                 .{frame.error_code},
             ) catch "";
-            kpanic.on_msg_ext("General protection fault", msg);
+            kpanic.onMsgExt("General protection fault", msg);
         },
         14 => {
             var fault_address: usize = undefined;
@@ -147,7 +149,7 @@ export fn zig_interrupt_dispatch(frame: *InterruptFrame) callconv(.c) void {
                 "Fault address: 0x{x}",
                 .{fault_address},
             ) catch "";
-            kpanic.on_msg_ext("Page fault", msg);
+            kpanic.onMsgExt("Page fault", msg);
         },
         33 => {
             last_scancode = io.inb(0x60);
@@ -160,10 +162,10 @@ export fn zig_interrupt_dispatch(frame: *InterruptFrame) callconv(.c) void {
                 .{last_scancode},
             ) catch "";
 
-            kpanic.on_msg_ext("Keyboard interrupt", msg);
+            kpanic.onMsgExt("Keyboard interrupt", msg);
         },
         else => {
-            kpanic.on_msg("Unhandled CPU exception");
+            kpanic.onMsg("Unhandled CPU exception");
         },
     }
 }

@@ -1,0 +1,12 @@
+.{
+    .name = .RacCoon,
+    .version = "0.16.0",
+    .dependencies = .{
+        .zlinter = .{
+            .url = "git+https://github.com/kurtwagner/zlinter?ref=0.16.x#c44f11b507362b59a55fca1062d89dfdffd167df",
+            .hash = "zlinter-0.0.1-OjQ08avrCwDXLzWbn6PYtfEopUVPSxuNQDJ1dGvRhhCp",
+        },
+    },
+    .paths = .{""},
+    .fingerprint = 0xb659b67b49b65497,
+}

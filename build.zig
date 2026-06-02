@@ -1,6 +1,7 @@
 const std = @import("std");
+const zlinter = @import("zlinter");
 
-fn load_assembly_file(b: *std.Build, module: *std.Build.Module) !void {
+fn loadAssemblyFile(b: *std.Build, module: *std.Build.Module) !void {
     const arch = module.resolved_target.?.result.cpu.arch;
 
     const assembly_dir = try std.fmt.allocPrint(
@@ -19,6 +20,7 @@ fn load_assembly_file(b: *std.Build, module: *std.Build.Module) !void {
 
     while (try folders_iterator.next(io)) |entry| {
         if (entry.kind == .file) {
+            // zlinter-disable-next-line no_deprecated - std.Io.Dir.path migration pending
             const path = try std.fs.path.join(b.allocator, &[_][]const u8{ assembly_dir, entry.name });
             module.addAssemblyFile(b.path(path));
         } else if (entry.kind == .directory) {
@@ -27,7 +29,7 @@ fn load_assembly_file(b: *std.Build, module: *std.Build.Module) !void {
     }
 }
 
-fn on_error(b: *std.Build, err: anyerror) noreturn {
+fn onError(b: *std.Build, err: anyerror) noreturn {
     const msg = std.fmt.allocPrint(
         b.allocator,
         "Error {any}",
@@ -71,8 +73,8 @@ pub fn build(b: *std.Build) void {
     });
 
     // root_module.addAssemblyFile(b.path("kernel/arch/x86/asm/idt.s"));
-    _ = load_assembly_file(b, root_module) catch |err| {
-        on_error(b, err);
+    _ = loadAssemblyFile(b, root_module) catch |err| {
+        onError(b, err);
     };
 
     const exe = b.addExecutable(.{
@@ -171,4 +173,26 @@ pub fn build(b: *std.Build) void {
     debug64_cmd.step.dependOn(&boot_image_install.step);
     debug64_cmd.step.dependOn(&kernel_elf_install.step);
     debug64_step.dependOn(&debug64_cmd.step);
+
+    // ── lint ───────────────────────────────────────────────────────────────
+    const lint_cmd = b.step("lint", "Lint source code.");
+
+    lint_cmd.dependOn(step: {
+        var builder = zlinter.builder(b, .{});
+        builder.addRule(.{ .builtin = .field_naming }, .{});
+        builder.addRule(.{ .builtin = .declaration_naming }, .{});
+        builder.addRule(.{ .builtin = .function_naming }, .{});
+        builder.addRule(.{ .builtin = .file_naming }, .{});
+        builder.addRule(.{ .builtin = .switch_case_ordering }, .{});
+        builder.addRule(.{ .builtin = .no_unused }, .{});
+        builder.addRule(.{ .builtin = .no_deprecated }, .{});
+        builder.addRule(.{ .builtin = .no_orelse_unreachable }, .{});
+        builder.addRule(.{ .builtin = .require_labeled_continue }, .{});
+        builder.addRule(.{ .builtin = .require_exhaustive_enum_switch }, .{});
+        builder.addRule(.{ .builtin = .no_inferred_error_unions }, .{});
+        builder.addRule(.{ .builtin = .no_literal_only_bool_expression }, .{});
+        builder.addRule(.{ .builtin = .no_hidden_allocations }, .{});
+
+        break :step builder.build();
+    });
 }

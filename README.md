@@ -54,6 +54,22 @@ zig build debug64   # kernel — long mode   (0x8400)
 
 GDB init files live in `scripts/gdb/`. Common helpers (register display, mode inspection) are in `scripts/gdb/common.gdb`.
 
+## Lint
+
+Linting uses [zlinter](https://github.com/KurtWagner/zlinter). Fetch the linter
+dependency once (this records it in `build.zig.zon` and unpacks it under
+`zig-pkg/`):
+
+```sh
+zig fetch --save git+https://github.com/kurtwagner/zlinter#0.16.x
+```
+
+Then run the linter:
+
+```sh
+zig build lint
+```
+
 ## Project layout
 
 ```

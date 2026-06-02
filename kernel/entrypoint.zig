@@ -14,7 +14,7 @@ pub fn panic(
     _ = error_return_trace;
     _ = error_return_address;
 
-    kpanic.on_msg(msg);
+    kpanic.onMsg(msg);
 }
 
 /// Zig kernel entry point, called from stage3.s.
@@ -27,10 +27,10 @@ pub fn panic(
 ///   - Interrupts disabled (no IDT yet)
 fn kentry() linksection(".text.entry") callconv(.c) noreturn {
     idt.init();
-    pic.init_keyboard_only();
+    pic.initKeyboardOnly();
     io.sti();
 
-    kmain() catch |err| kpanic.on_err(err);
+    kmain() catch |err| kpanic.onErr(err);
     idle();
 }
 

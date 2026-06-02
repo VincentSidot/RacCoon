@@ -4,3 +4,4 @@ build/
 zig-out/
 scripts/.qemu_window_size
 .dockerfile.hash
+zig-pkg/

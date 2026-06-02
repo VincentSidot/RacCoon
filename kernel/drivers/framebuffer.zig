@@ -1,8 +1,8 @@
 const utils = @import("../lib/math.zig");
 const clamp = utils.clamp;
 
-const BPP_24: u8 = 24;
-const BPP_32: u8 = 32;
+const bpp_24: u8 = 24;
+const bpp_32: u8 = 32;
 
 const fb_info: *const FrameBufferInfo = @ptrFromInt(0x7000);
 
@@ -17,9 +17,11 @@ const FrameBufferInfo = extern struct {
 };
 
 pub const Color = struct {
+    // zlinter-disable field_naming - RGB color channel names
     r: u8 = 0,
     g: u8 = 0,
     b: u8 = 0,
+    // zlinter-enable field_naming
 
     pub const black: Color = .{ .r = 0, .g = 0, .b = 0 };
     pub const white: Color = .{ .r = 255, .g = 255, .b = 255 };
@@ -27,13 +29,13 @@ pub const Color = struct {
     pub const green: Color = .{ .r = 0, .g = 255, .b = 0 };
     pub const blue: Color = .{ .r = 0, .g = 0, .b = 255 };
 
-    fn as_bpp32(self: Color) u32 {
+    fn asBpp32(self: Color) u32 {
         return (@as(u32, self.r) << 16) |
             (@as(u32, self.g) << 8) |
             @as(u32, self.b);
     }
 
-    fn as_bpp24(self: Color) u24 {
+    fn asBpp24(self: Color) u24 {
         return (@as(u24, self.r) << 16) | (@as(u24, self.g) << 8) | @as(u24, self.b);
     }
 
@@ -76,22 +78,26 @@ pub const Rect = struct {
         };
     }
 
-    pub fn far_corner(self: Rect) Point {
+    pub fn farCorner(self: Rect) Point {
         return self.origin + self.size;
     }
 };
 
-fn apply_fn(comptime T: type) type {
+fn ApplyFn(comptime T: type) type {
+    // Enforce inline here to ensure better performance and no call overhead for the color function, which is called for every pixel.
+    // Later may also expose an api that allow functions ptr to allow more dynamic rendering, at some performance cost.
     return fn (ctx: *T, p: Point) callconv(.@"inline") ?Color;
 }
 
-pub fn render(comptime T: type, rect: Rect, ctx: *T, colorFn: apply_fn(T)) !void {
+pub const Error = error{ OutOfBounds, UnsupportedBPP };
+
+pub fn render(comptime T: type, rect: Rect, ctx: *T, colorFn: ApplyFn(T)) Error!void {
     const fb_addr: usize = fb_info.address;
     const pitch: usize = fb_info.pitch;
     const bpp: u8 = fb_info.bpp;
 
     const screen_rect = Rect.screen();
-    const rect_far_corner = rect.far_corner();
+    const rect_far_corner = rect.farCorner();
 
     if (rect_far_corner[0] > screen_rect.size[0] or
         rect_far_corner[1] > screen_rect.size[1])
@@ -103,17 +109,17 @@ pub fn render(comptime T: type, rect: Rect, ctx: *T, colorFn: apply_fn(T)) !void
     const y = rect.origin[1];
 
     switch (bpp) {
-        BPP_24 => {
+        bpp_24 => {
             var offset = y * pitch + x * 3;
-            var dy: usize = y;
-            while (dy < rect_far_corner[1]) : (dy += 1) {
-                var dx: usize = x;
-                while (dx < rect_far_corner[0]) : (dx += 1) {
-                    if (colorFn(ctx, .{ dx, dy })) |color| {
-                        const p: [*]volatile u8 = @ptrFromInt(fb_addr + offset);
-                        p[0] = color.b;
-                        p[1] = color.g;
-                        p[2] = color.r;
+            var row: usize = y;
+            while (row < rect_far_corner[1]) : (row += 1) {
+                var col: usize = x;
+                while (col < rect_far_corner[0]) : (col += 1) {
+                    if (colorFn(ctx, .{ col, row })) |color| {
+                        const ptr: [*]volatile u8 = @ptrFromInt(fb_addr + offset);
+                        ptr[0] = color.b;
+                        ptr[1] = color.g;
+                        ptr[2] = color.r;
                     }
 
                     // Advance offset
@@ -124,16 +130,16 @@ pub fn render(comptime T: type, rect: Rect, ctx: *T, colorFn: apply_fn(T)) !void
                 offset += pitch - (rect_far_corner[0] - x) * 3;
             }
         },
-        BPP_32 => {
+        bpp_32 => {
             var offset = y * pitch + x * 4;
 
-            var dy: usize = y;
-            while (dy < rect_far_corner[1]) : (dy += 1) {
-                var dx: usize = x;
-                while (dx < rect_far_corner[0]) : (dx += 1) {
-                    if (colorFn(ctx, .{ dx, dy })) |color| {
-                        const p: *volatile u32 = @ptrFromInt(fb_addr + offset);
-                        p.* = color.as_bpp32();
+            var row: usize = y;
+            while (row < rect_far_corner[1]) : (row += 1) {
+                var col: usize = x;
+                while (col < rect_far_corner[0]) : (col += 1) {
+                    if (colorFn(ctx, .{ col, row })) |color| {
+                        const ptr: *volatile u32 = @ptrFromInt(fb_addr + offset);
+                        ptr.* = color.asBpp32();
                     }
 
                     // Advance offset
@@ -148,7 +154,7 @@ pub fn render(comptime T: type, rect: Rect, ctx: *T, colorFn: apply_fn(T)) !void
     }
 }
 
-pub fn set(x: usize, y: usize, color: Color) !void {
+pub fn set(x: usize, y: usize, color: Color) Error!void {
     const Ctx = struct {
         _color: Color,
 
@@ -166,8 +172,8 @@ pub fn set(x: usize, y: usize, color: Color) !void {
     }, &ctx, Ctx.call);
 }
 
-pub fn fill_rect(rect: Rect, color: Color) !void {
-    const P = struct {
+pub fn fillRect(rect: Rect, color: Color) Error!void {
+    const Ctx = struct {
         const Self = @This();
         _color: Color,
 
@@ -177,11 +183,11 @@ pub fn fill_rect(rect: Rect, color: Color) !void {
         }
     };
 
-    var p: P = .{ ._color = color };
+    var ctx: Ctx = .{ ._color = color };
 
-    try render(P, rect, &p, P.call);
+    try render(Ctx, rect, &ctx, Ctx.call);
 }
 
-pub fn fill(color: Color) !void {
-    try fill_rect(Rect.screen(), color);
+pub fn fill(color: Color) Error!void {
+    try fillRect(Rect.screen(), color);
 }

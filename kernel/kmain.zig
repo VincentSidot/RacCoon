@@ -3,7 +3,7 @@ const screen = @import("drivers/framebuffer.zig");
 const text = @import("drivers/tty.zig");
 const Writer = text.Writer;
 
-pub fn kmain() !void {
+pub fn kmain() (error{NoSpaceLeft} || text.Error)!void {
     var buffer: [512]u8 = undefined;
 
     const message = try std.fmt.bufPrint(&buffer,
@@ -16,7 +16,7 @@ pub fn kmain() !void {
 
     try screen.fill(.{ .r = 0x90, .g = 0xD5, .b = 0xFF });
     var writer: Writer = .{
-        .fg = .{
+        .foreground = .{
             .r = 0x16,
             .g = 0x16,
             .b = 0x16,
