@@ -1,15 +1,7 @@
 const std = @import("std");
 const mem = std.mem;
 
-const Allocator = std.mem.Allocator;
-
-pub fn RingBuffer(comptime T: type, comptime alignement: ?mem.Alignment) type {
-    if (alignement) |a| {
-        if (a.toByteUnits() == @alignOf(T)) {
-            return RingBuffer(T, null);
-        }
-    }
-
+pub fn RingBuffer(comptime T: type) type {
     return struct {
         const Self = @This();
 
@@ -28,25 +20,14 @@ pub fn RingBuffer(comptime T: type, comptime alignement: ?mem.Alignment) type {
 
         pub const Slice = []T;
 
-        pub fn initCapacity(gpa: Allocator, num: usize) Allocator.Error!Self {
-            var self: Self = .empty;
-            try self.ensureTotalCapacityPrecise(gpa, num);
-            return self;
-        }
-
-        pub fn initFromBuffer(buffer: Slice) Self {
+        /// Use an owned slice as ring buffer storage.
+        pub fn initWithBuffer(buffer: Slice) Self {
             return Self{
                 .items = buffer,
                 .read_head = 0,
                 .write_head = 0,
                 .len = 0,
             };
-        }
-
-        pub fn deinit(self: *Self, gpa: Allocator) void {
-            if (self.capacity() > 0) {
-                gpa.free(self.items);
-            }
         }
 
         /// Pushes an item to the buffer, if the buffer is full, it will overwrite the oldest item
@@ -114,42 +95,14 @@ pub fn RingBuffer(comptime T: type, comptime alignement: ?mem.Alignment) type {
         fn rewindCursor(self: *Self, cursor: *usize) void {
             cursor.* = (cursor.* + self.capacity() - 1) % self.capacity();
         }
-
-        /// Note: this function will not preserve the content order of the buffer.
-        pub fn ensureTotalCapacityPrecise(self: *Self, gpa: Allocator, new_capacity: usize) Allocator.Error!void {
-            if (self.capacity() >= new_capacity) return;
-
-            const old_memory = self.allocatedSlice();
-
-            if (gpa.remap(old_memory, new_capacity)) |new_memory| {
-                self.items = new_memory;
-            } else {
-                const new_memory = try gpa.alignedAlloc(T, alignement, new_capacity);
-                if (self.capacity() > 0) {
-                    gpa.free(self.items);
-                }
-
-                self.items = new_memory;
-            }
-
-            // Reset buffer state.
-            self.read_head = 0;
-            self.write_head = 0;
-            self.len = 0;
-        }
-
-        fn allocatedSlice(self: *Self) Slice {
-            return self.items.ptr[0..self.capacity()];
-        }
     };
 }
 
 test "RingBuffer Allocator" {
-    const gpa = std.testing.allocator;
+    var raw: [4]u8 = undefined;
 
-    var buffer = RingBuffer(u8, null).empty;
-    defer buffer.deinit(gpa);
-    try buffer.ensureTotalCapacityPrecise(gpa, 4);
+    var buffer = RingBuffer(u8).empty;
+    buffer.items = &raw;
 
     buffer.pushBack(1);
     buffer.pushBack(2);
@@ -182,7 +135,7 @@ test "RingBuffer Allocator" {
 test "RingBuffer Slice" {
     var raw: [9]u8 = undefined;
 
-    var buffer = RingBuffer(u8, null).initFromBuffer(&raw);
+    var buffer = RingBuffer(u8).initWithBuffer(&raw);
 
     var i: u8 = 0;
     while (i < 9) : (i += 1) {
