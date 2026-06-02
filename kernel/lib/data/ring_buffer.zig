@@ -34,6 +34,15 @@ pub fn RingBuffer(comptime T: type, comptime alignement: ?mem.Alignment) type {
             return self;
         }
 
+        pub fn initFromBuffer(buffer: Slice) Self {
+            return Self{
+                .items = buffer,
+                .read_head = 0,
+                .write_head = 0,
+                .len = 0,
+            };
+        }
+
         pub fn deinit(self: *Self, gpa: Allocator) void {
             if (self.capacity() > 0) {
                 gpa.free(self.items);
@@ -41,7 +50,7 @@ pub fn RingBuffer(comptime T: type, comptime alignement: ?mem.Alignment) type {
         }
 
         /// Pushes an item to the buffer, if the buffer is full, it will overwrite the oldest item
-        pub fn push(self: *Self, item: T) void {
+        pub fn pushBack(self: *Self, item: T) void {
             if (self.capacity() == 0) return;
 
             if (self.len == self.capacity()) {
@@ -57,13 +66,39 @@ pub fn RingBuffer(comptime T: type, comptime alignement: ?mem.Alignment) type {
             }
         }
 
+        pub fn pushFront(self: *Self, item: T) void {
+            if (self.capacity() == 0) return;
+
+            if (self.len == self.capacity()) {
+                // Buffer is full. Overwrite oldest item.
+                self.rewindCursor(&self.read_head);
+                self.rewindCursor(&self.write_head);
+                self.items[self.read_head] = item;
+            } else {
+                // Buffer has free space.
+                self.rewindCursor(&self.read_head);
+                self.items[self.read_head] = item;
+                self.len += 1;
+            }
+        }
+
         /// Pops the oldest item from the buffer, if the buffer is empty, it will return null
-        pub fn pop(self: *Self) ?T {
+        pub fn popFront(self: *Self) ?T {
             // Buffer is empty
             if (self.len == 0) return null;
 
             const item = self.items[self.read_head];
             self.advanceCursor(&self.read_head);
+            self.len -= 1;
+            return item;
+        }
+
+        pub fn popBack(self: *Self) ?T {
+            // Buffer is empty
+            if (self.len == 0) return null;
+
+            self.rewindCursor(&self.write_head);
+            const item = self.items[self.write_head];
             self.len -= 1;
             return item;
         }
@@ -77,7 +112,7 @@ pub fn RingBuffer(comptime T: type, comptime alignement: ?mem.Alignment) type {
         }
 
         fn rewindCursor(self: *Self, cursor: *usize) void {
-            cursor.* = (cursor.* + self.len - 1) % self.len;
+            cursor.* = (cursor.* + self.capacity() - 1) % self.capacity();
         }
 
         /// Note: this function will not preserve the content order of the buffer.
@@ -100,7 +135,7 @@ pub fn RingBuffer(comptime T: type, comptime alignement: ?mem.Alignment) type {
             // Reset buffer state.
             self.read_head = 0;
             self.write_head = 0;
-            self.items.len = 0;
+            self.len = 0;
         }
 
         fn allocatedSlice(self: *Self) Slice {
@@ -109,30 +144,55 @@ pub fn RingBuffer(comptime T: type, comptime alignement: ?mem.Alignment) type {
     };
 }
 
-test "RingBuffer" {
+test "RingBuffer Allocator" {
     const gpa = std.testing.allocator;
 
     var buffer = RingBuffer(u8, null).empty;
     defer buffer.deinit(gpa);
     try buffer.ensureTotalCapacityPrecise(gpa, 4);
 
-    buffer.push(1);
-    buffer.push(2);
-    buffer.push(3);
-    buffer.push(4);
+    buffer.pushBack(1);
+    buffer.pushBack(2);
+    buffer.pushBack(3);
+    buffer.pushBack(4);
 
-    std.debug.print("state #1: {any}\n", .{buffer});
+    try std.testing.expectEqual(1, buffer.popFront());
+    try std.testing.expectEqual(2, buffer.popFront());
+    buffer.pushBack(5);
 
-    try std.testing.expectEqual(1, buffer.pop());
-    std.debug.print("state #2: {any}\n", .{buffer});
-    try std.testing.expectEqual(2, buffer.pop());
-    buffer.push(5);
+    try std.testing.expectEqual(3, buffer.popFront());
+    try std.testing.expectEqual(4, buffer.popFront());
+    try std.testing.expectEqual(5, buffer.popFront());
 
-    try std.testing.expectEqual(3, buffer.pop());
-    try std.testing.expectEqual(4, buffer.pop());
-    try std.testing.expectEqual(5, buffer.pop());
+    try std.testing.expectEqual(null, buffer.popFront());
 
-    std.debug.print("state #3: {any}\n", .{buffer});
+    buffer.pushFront(1);
+    buffer.pushFront(2);
+    buffer.pushBack(3);
+    buffer.pushBack(4);
+    buffer.pushFront(5);
 
-    try std.testing.expectEqual(null, buffer.pop());
+    // Expected buffer state: {5, 2, 1, 3}
+    try std.testing.expectEqual(3, buffer.popBack());
+    try std.testing.expectEqual(1, buffer.popBack());
+    try std.testing.expectEqual(2, buffer.popBack());
+    try std.testing.expectEqual(5, buffer.popBack());
+}
+
+test "RingBuffer Slice" {
+    var raw: [9]u8 = undefined;
+
+    var buffer = RingBuffer(u8, null).initFromBuffer(&raw);
+
+    var i: u8 = 0;
+    while (i < 9) : (i += 1) {
+        buffer.pushBack(i);
+    }
+
+    buffer.pushFront(9);
+
+    const expected: [9]u8 = .{ 9, 0, 1, 2, 3, 4, 5, 6, 7 };
+    for (expected) |value| {
+        try std.testing.expectEqual(value, buffer.popFront().?);
+    }
 }
