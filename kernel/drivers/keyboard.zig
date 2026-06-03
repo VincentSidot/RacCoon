@@ -3,7 +3,7 @@ const spcs = @import("../lib/data/spsc.zig");
 
 /// Keyboard scancodes (PS/2 scancode set 1, make codes).
 /// Non-exhaustive: unmapped scancodes keep their raw value.
-pub const KeyCode = enum(u8) {
+pub const PhysicalKeyCode = enum(u8) {
     // zlinter-disable field_naming - field names mirror key scancodes
     KEY_ESC = 0x01,
     KEY_1 = 0x02,
@@ -78,8 +78,8 @@ pub const KeyCode = enum(u8) {
     // zlinter-enable field_naming
 };
 
-pub const RawKeyEvent = struct {
-    keycode: KeyCode,
+pub const RawCodeEvent = struct {
+    keycode: PhysicalKeyCode,
     pressed: bool,
 };
 
@@ -95,43 +95,85 @@ pub const Modifiers = packed struct {
     };
 };
 
+pub const Metadata = packed struct {
+    missed_events: bool,
+    pressed: bool,
+
+    pub const empty: Metadata = .{
+        .missed_events = false,
+        .pressed = false,
+    };
+};
+
+pub const ScanCodeEvent = packed struct {
+    keycode: PhysicalKeyCode,
+    modifiers: Modifiers = .empty,
+    state: Metadata = .empty,
+};
+
 const buffer_size: usize = 256;
-var buffer: [buffer_size]RawKeyEvent = undefined;
+var buffer: [buffer_size]RawCodeEvent = undefined;
 
 const State = struct {
-    queue: spcs.SpscRing(RawKeyEvent),
-    modifiers: Modifiers = .empty,
+    queue: spcs.SpscRing(RawCodeEvent),
+    last_modifier: Modifiers = .empty,
 };
 
 var state: State = .{
-    .queue = spcs.SpscRing(RawKeyEvent).initWithBuffer(&buffer),
+    .queue = spcs.SpscRing(RawCodeEvent).initWithBuffer(&buffer),
 };
 
 pub fn onKeyboardInterrupt() void {
     const scancode = io.inb(0x60);
 
     const pressed = (scancode & 0x80) == 0;
-    const keycode: KeyCode = @enumFromInt(scancode & 0x7F);
+    const keycode: PhysicalKeyCode = @enumFromInt(scancode & 0x7F);
 
-    const event: RawKeyEvent = .{
+    const event: RawCodeEvent = .{
         .keycode = keycode,
         .pressed = pressed,
     };
 
-    // Handle key modifiers
-    // Note: right shift and alt needs extended scancodes which are not handled yet.
-    switch (keycode) {
-        .KEY_LEFTSHIFT, .KEY_RIGHTSHIFT => state.modifiers.shift = pressed,
-        .KEY_LEFTCTRL => state.modifiers.ctrl = pressed,
-        .KEY_LEFTALT => state.modifiers.alt = pressed,
-        else => {},
-    }
-
     state.queue.emit(event);
 }
 
-pub fn readRawEvent() ?RawKeyEvent {
-    return state.queue.consume();
+fn updateModifiers(event: RawCodeEvent) void {
+    switch (event.keycode) {
+        .KEY_LEFTSHIFT, .KEY_RIGHTSHIFT => state.last_modifier.shift = event.pressed,
+        .KEY_LEFTCTRL => state.last_modifier.ctrl = event.pressed,
+        .KEY_LEFTALT => state.last_modifier.alt = event.pressed,
+        else => {},
+    }
+}
+
+pub fn readRawEvent() ?ScanCodeEvent {
+    var has_missed_events: bool = false;
+
+    const raw_event = state.queue.consumeExt(&has_missed_events) catch |err| switch (err) {
+        error.QueueEmpty => return null,
+        error.ProducerOverrun => return null, // TODO: we should probably handle this case better
+    };
+
+    const metadata: Metadata = .{
+        .missed_events = has_missed_events,
+        .pressed = raw_event.pressed,
+    };
+
+    if (has_missed_events) {
+        // Reset modifiers
+        state.last_modifier = .empty;
+    }
+
+    // Handle modifiers
+    updateModifiers(raw_event);
+
+    const event: ScanCodeEvent = .{
+        .keycode = raw_event.keycode,
+        .modifiers = state.last_modifier,
+        .state = metadata,
+    };
+
+    return event;
 }
 
 /// Note: this function consume the key event, even if it's not a char event (e.g. shift press).
@@ -139,18 +181,14 @@ pub fn readRawEvent() ?RawKeyEvent {
 /// keystroke yields a single character.
 pub fn readCharEvent() ?u8 {
     const event = readRawEvent() orelse return null;
-    if (!event.pressed) return null;
+    if (!event.state.pressed) return null;
 
-    return convertKeycodeToChar(event.keycode);
-}
-
-pub fn modifiers() Modifiers {
-    return state.modifiers;
+    return convertKeycodeToChar(event);
 }
 
 /// This function is not handling all the available ascii characters.
-pub fn convertKeycodeToChar(code: KeyCode) ?u8 {
-    switch (code) {
+pub fn convertKeycodeToChar(event: ScanCodeEvent) ?u8 {
+    switch (event.keycode) {
         .KEY_ENTER => return '\n',
         .KEY_COMMA => return ',',
         .KEY_DOT => return '.',
@@ -168,32 +206,32 @@ pub fn convertKeycodeToChar(code: KeyCode) ?u8 {
         .KEY_8 => return '8',
         .KEY_9 => return '9',
         .KEY_0 => return '0',
-        .KEY_Q => return if (state.modifiers.shift) 'Q' else 'q',
-        .KEY_W => return if (state.modifiers.shift) 'W' else 'w',
-        .KEY_E => return if (state.modifiers.shift) 'E' else 'e',
-        .KEY_R => return if (state.modifiers.shift) 'R' else 'r',
-        .KEY_T => return if (state.modifiers.shift) 'T' else 't',
-        .KEY_Y => return if (state.modifiers.shift) 'Y' else 'y',
-        .KEY_U => return if (state.modifiers.shift) 'U' else 'u',
-        .KEY_I => return if (state.modifiers.shift) 'I' else 'i',
-        .KEY_O => return if (state.modifiers.shift) 'O' else 'o',
-        .KEY_P => return if (state.modifiers.shift) 'P' else 'p',
-        .KEY_A => return if (state.modifiers.shift) 'A' else 'a',
-        .KEY_S => return if (state.modifiers.shift) 'S' else 's',
-        .KEY_D => return if (state.modifiers.shift) 'D' else 'd',
-        .KEY_F => return if (state.modifiers.shift) 'F' else 'f',
-        .KEY_G => return if (state.modifiers.shift) 'G' else 'g',
-        .KEY_H => return if (state.modifiers.shift) 'H' else 'h',
-        .KEY_J => return if (state.modifiers.shift) 'J' else 'j',
-        .KEY_K => return if (state.modifiers.shift) 'K' else 'k',
-        .KEY_L => return if (state.modifiers.shift) 'L' else 'l',
-        .KEY_Z => return if (state.modifiers.shift) 'Z' else 'z',
-        .KEY_X => return if (state.modifiers.shift) 'X' else 'x',
-        .KEY_C => return if (state.modifiers.shift) 'C' else 'c',
-        .KEY_V => return if (state.modifiers.shift) 'V' else 'v',
-        .KEY_B => return if (state.modifiers.shift) 'B' else 'b',
-        .KEY_N => return if (state.modifiers.shift) 'N' else 'n',
-        .KEY_M => return if (state.modifiers.shift) 'M' else 'm',
+        .KEY_Q => return if (event.modifiers.shift) 'Q' else 'q',
+        .KEY_W => return if (event.modifiers.shift) 'W' else 'w',
+        .KEY_E => return if (event.modifiers.shift) 'E' else 'e',
+        .KEY_R => return if (event.modifiers.shift) 'R' else 'r',
+        .KEY_T => return if (event.modifiers.shift) 'T' else 't',
+        .KEY_Y => return if (event.modifiers.shift) 'Y' else 'y',
+        .KEY_U => return if (event.modifiers.shift) 'U' else 'u',
+        .KEY_I => return if (event.modifiers.shift) 'I' else 'i',
+        .KEY_O => return if (event.modifiers.shift) 'O' else 'o',
+        .KEY_P => return if (event.modifiers.shift) 'P' else 'p',
+        .KEY_A => return if (event.modifiers.shift) 'A' else 'a',
+        .KEY_S => return if (event.modifiers.shift) 'S' else 's',
+        .KEY_D => return if (event.modifiers.shift) 'D' else 'd',
+        .KEY_F => return if (event.modifiers.shift) 'F' else 'f',
+        .KEY_G => return if (event.modifiers.shift) 'G' else 'g',
+        .KEY_H => return if (event.modifiers.shift) 'H' else 'h',
+        .KEY_J => return if (event.modifiers.shift) 'J' else 'j',
+        .KEY_K => return if (event.modifiers.shift) 'K' else 'k',
+        .KEY_L => return if (event.modifiers.shift) 'L' else 'l',
+        .KEY_Z => return if (event.modifiers.shift) 'Z' else 'z',
+        .KEY_X => return if (event.modifiers.shift) 'X' else 'x',
+        .KEY_C => return if (event.modifiers.shift) 'C' else 'c',
+        .KEY_V => return if (event.modifiers.shift) 'V' else 'v',
+        .KEY_B => return if (event.modifiers.shift) 'B' else 'b',
+        .KEY_N => return if (event.modifiers.shift) 'N' else 'n',
+        .KEY_M => return if (event.modifiers.shift) 'M' else 'm',
         else => return null,
     }
 }
