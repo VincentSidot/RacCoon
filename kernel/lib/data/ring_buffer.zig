@@ -1,5 +1,3 @@
-const std = @import("std");
-
 pub fn RingBuffer(comptime T: type) type {
     return struct {
         const Self = @This();
@@ -97,7 +95,8 @@ pub fn RingBuffer(comptime T: type) type {
     };
 }
 
-test "RingBuffer Allocator" {
+test "RingBuffer #1" {
+    const std = @import("std");
     var raw: [4]u8 = undefined;
 
     var buffer = RingBuffer(u8).empty;
@@ -131,7 +130,8 @@ test "RingBuffer Allocator" {
     try std.testing.expectEqual(5, buffer.popBack());
 }
 
-test "RingBuffer Slice" {
+test "RingBuffer #2" {
+    const std = @import("std");
     var raw: [9]u8 = undefined;
 
     var buffer = RingBuffer(u8).initWithBuffer(&raw);
