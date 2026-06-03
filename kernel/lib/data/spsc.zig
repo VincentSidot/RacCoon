@@ -33,12 +33,6 @@ pub fn SpscRing(comptime T: type) type {
             return self.items.len;
         }
 
-        pub fn len(self: *const Self) usize {
-            const write = @atomicLoad(Index, &self.write, .acquire);
-            const read = @atomicLoad(Index, &self.read, .acquire);
-            return write -% read;
-        }
-
         pub fn emit(self: *Self, item: T) void {
             const write = @atomicLoad(Index, &self.write, .monotonic);
             self.items[self.maskOrMod(write)] = item;

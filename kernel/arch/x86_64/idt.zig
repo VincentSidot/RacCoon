@@ -1,7 +1,7 @@
 const std = @import("std");
 const kpanic = @import("../../panic.zig");
 const pic = @import("pic.zig");
-const io = @import("io.zig");
+const keyboard = @import("../../drivers/keyboard.zig");
 
 const Idtr = packed struct {
     limit: u16,
@@ -152,17 +152,8 @@ export fn zigInterruptDispatch(frame: *InterruptFrame) callconv(.c) void {
             kpanic.onMsgExt("Page fault", msg);
         },
         33 => {
-            last_scancode = io.inb(0x60);
-            pic.eoi(1);
-
-            // For now, let's panic on keyboard interrupts
-            const msg = std.fmt.bufPrint(
-                &buffer,
-                "Scancode: 0x{x}",
-                .{last_scancode},
-            ) catch "";
-
-            kpanic.onMsgExt("Keyboard interrupt", msg);
+            keyboard.onKeyboardInterrupt();
+            pic.eoi(1); // Acknowledge the keyboard interrupt to the PIC
         },
         else => {
             kpanic.onMsg("Unhandled CPU exception");
