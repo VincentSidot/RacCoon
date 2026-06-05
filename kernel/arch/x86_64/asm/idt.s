@@ -56,7 +56,7 @@ isr_common:
     push %r15
 
     mov %rsp, %rdi
-    call zigInterruptDispatch
+    call interruptDispatchRouter
 
     pop %r15
     pop %r14

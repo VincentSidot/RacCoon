@@ -1,7 +1,7 @@
-const std = @import("std");
 const screen = @import("drivers/framebuffer.zig");
 const text = @import("drivers/tty.zig");
 const keyboard = @import("drivers/keyboard.zig");
+const tformat = @import("lib/temp_string.zig").tformat;
 
 const Writer = text.Writer;
 
@@ -9,9 +9,7 @@ pub fn kmain() (error{NoSpaceLeft} || text.Error)!void {
     const bg_color: screen.Color = .{ .r = 0x90, .g = 0xD5, .b = 0xFF };
     const tx_color: screen.Color = .{ .r = 0x16, .g = 0x16, .b = 0x16 };
 
-    var buffer: [512]u8 = undefined;
-
-    const message = try std.fmt.bufPrint(&buffer,
+    const message = try tformat(
         \\ > Welcome...
         \\ > Fetching system information...
         \\ > Screen size: {d}x{d}
@@ -28,11 +26,23 @@ pub fn kmain() (error{NoSpaceLeft} || text.Error)!void {
 
     try writer.write(message);
 
-    while (true) {
-        const maybe_char = keyboard.readCharEvent();
+    var should_quit: bool = false;
+    while (!should_quit) {
+        const event = keyboard.readRawEvent() orelse continue;
 
-        if (maybe_char) |char| {
+        if (keyboard.convertKeycodeToChar(event)) |char| {
+            if (char == 'c' and event.modifiers.ctrl) {
+                should_quit = true;
+                continue;
+            }
+
             _ = try writer.putchar(char);
         }
+
+        // const maybe_char = keyboard.readCharEvent();
+
+        // if (maybe_char) |char| {
+        //     _ = try writer.putchar(char);
+        // }
     }
 }

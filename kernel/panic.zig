@@ -1,17 +1,19 @@
-const std = @import("std");
-
 const screen = @import("drivers/framebuffer.zig");
 const text = @import("drivers/tty.zig");
 const icons = @import("font/icons.zig");
-const halt = @import("arch.zig").halt;
+const arch = @import("arch.zig");
+const tstring = @import("lib/temp_string.zig");
 
 const Color = screen.Color;
 const Point = screen.Point;
 const Rect = screen.Rect;
 const Writer = text.Writer;
+const InterruptFrame = arch.idt.InterruptFrame;
 const font = text.font;
+const halt = arch.halt;
+const registerInterruptHandler = arch.idt.registerInterruptHandler;
+const tformat = tstring.tformat;
 
-var buffer: [128]u8 = undefined;
 const default_message = "Kernel Panic, something went really wrong...";
 
 pub fn onErr(err: anyerror) noreturn {
@@ -44,8 +46,7 @@ fn renderSimp(name: []const u8, message: ?[]const u8) !void {
     try screen.fill(.blue);
     const screen_rect = Rect.screen();
 
-    const msg = std.fmt.bufPrint(
-        &buffer,
+    const msg = tformat(
         "Kernel panic, unable to render error screen: {s}",
         .{name},
     ) catch default_message;
@@ -149,4 +150,57 @@ fn renderExt(name: []const u8, message: ?[]const u8) !void {
 
     var footer_writer = Writer{ .x = text_x, .y = text_y, .foreground = muted, .background = null };
     try footer_writer.write("System halted.");
+}
+
+// ============================================================================
+// Register IDT handlers for CPU exceptions
+// ============================================================================
+
+fn onDivideByZero(frame: *const InterruptFrame) void {
+    _ = frame;
+    onMsg("Divide by zero");
+}
+
+fn onInvalidOpcode(frame: *const InterruptFrame) void {
+    _ = frame;
+    onMsg("Invalid opcode");
+}
+
+fn onDoubleFault(frame: *const InterruptFrame) void {
+    const msg = tformat(
+        "Error code: 0x{x}",
+        .{frame.error_code},
+    ) catch "";
+    onMsgExt("Double fault", msg);
+}
+
+fn onGeneralProtectionFault(frame: *const InterruptFrame) void {
+    const msg = tformat(
+        "Error code: 0x{x}",
+        .{frame.error_code},
+    ) catch "";
+    onMsgExt("General protection fault", msg);
+}
+
+fn onPageFault(frame: *const InterruptFrame) void {
+    _ = frame;
+    var fault_address: usize = undefined;
+    asm volatile (
+        \\ movq %cr2, %[addr]
+        : [addr] "=r" (fault_address),
+    );
+
+    const msg = tformat(
+        "Fault address: 0x{x}",
+        .{fault_address},
+    ) catch "";
+    onMsgExt("Page fault", msg);
+}
+
+pub fn registerPanicIDTHandlers() void {
+    registerInterruptHandler(0, onDivideByZero);
+    registerInterruptHandler(6, onInvalidOpcode);
+    registerInterruptHandler(8, onDoubleFault);
+    registerInterruptHandler(13, onGeneralProtectionFault);
+    registerInterruptHandler(14, onPageFault);
 }

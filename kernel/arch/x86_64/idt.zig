@@ -1,8 +1,3 @@
-const std = @import("std");
-const kpanic = @import("../../panic.zig");
-const pic = @import("pic.zig");
-const keyboard = @import("../../drivers/keyboard.zig");
-
 const Idtr = packed struct {
     limit: u16,
     base: u64,
@@ -93,7 +88,7 @@ fn setupHandlers() void {
     IdtEntry.setGate(8, @intFromPtr(&__isr8)); // Double fault
     IdtEntry.setGate(13, @intFromPtr(&__isr13)); // General protection fault
     IdtEntry.setGate(14, @intFromPtr(&__isr14)); // Page fault
-    IdtEntry.setGate(33, @intFromPtr(&__isr33)); // Timer interrupt (IRQ0)
+    IdtEntry.setGate(33, @intFromPtr(&__isr33)); // Keyboard interrupt (IRQ1)
 }
 
 var idtr: Idtr = undefined;
@@ -109,54 +104,15 @@ pub fn init() void {
     __load_idt(&idtr);
 }
 
-pub var last_scancode: u8 = 0;
+pub const InterruptionFunction = fn (frame: *const InterruptFrame) void;
 
-export fn zigInterruptDispatch(frame: *InterruptFrame) callconv(.c) void {
-    var buffer: [256]u8 = undefined;
+var interruption_table: [256]*const InterruptionFunction = undefined;
 
-    switch (frame.vector) {
-        0 => {
-            kpanic.onMsg("Divide by zero");
-        },
-        6 => {
-            kpanic.onMsg("Invalid opcode");
-        },
-        8 => {
-            const msg = std.fmt.bufPrint(
-                &buffer,
-                "Error code: 0x{x}",
-                .{frame.error_code},
-            ) catch "";
-            kpanic.onMsgExt("Double fault", msg);
-        },
-        13 => {
-            const msg = std.fmt.bufPrint(
-                &buffer,
-                "Error code: 0x{x}",
-                .{frame.error_code},
-            ) catch "";
-            kpanic.onMsgExt("General protection fault", msg);
-        },
-        14 => {
-            var fault_address: usize = undefined;
-            asm volatile (
-                \\ movq %cr2, %[addr]
-                : [addr] "=r" (fault_address),
-            );
+pub fn registerInterruptHandler(vector: u8, handler: *const InterruptionFunction) void {
+    interruption_table[vector] = handler;
+}
 
-            const msg = std.fmt.bufPrint(
-                &buffer,
-                "Fault address: 0x{x}",
-                .{fault_address},
-            ) catch "";
-            kpanic.onMsgExt("Page fault", msg);
-        },
-        33 => {
-            keyboard.onKeyboardInterrupt();
-            pic.eoi(1); // Acknowledge the keyboard interrupt to the PIC
-        },
-        else => {
-            kpanic.onMsg("Unhandled CPU exception");
-        },
-    }
+export fn interruptDispatchRouter(frame: *const InterruptFrame) callconv(.c) void {
+    const handler = interruption_table[frame.vector];
+    handler(frame);
 }

@@ -169,13 +169,13 @@ test "SpscRingExt reports overrun once retries are exhausted" {
 test "SpscRing concurrent producer/consumer stays memory-safe and terminates" {
     const Queue = SpscRing(u64);
 
-    const N: u64 = 200_000;
+    const test_count: u64 = 200_000;
     // A small buffer relative to N forces the producer to lap the consumer
     // repeatedly, exercising the missed-event skip path under real contention.
     var buffer: [8]u64 = undefined;
     var queue = Queue.initWithBuffer(&buffer);
 
-    const Producer = struct {
+    const producer = struct {
         fn run(q: *Queue, count: u64) void {
             var i: u64 = 1;
             while (i <= count) : (i += 1) {
@@ -184,7 +184,7 @@ test "SpscRing concurrent producer/consumer stays memory-safe and terminates" {
         }
     };
 
-    var thread = try std.Thread.spawn(.{}, Producer.run, .{ &queue, N });
+    var thread = try std.Thread.spawn(.{}, producer.run, .{ &queue, test_count });
     defer thread.join();
 
     // Under sustained overrun the queue is lossy AND only approximately ordered:
@@ -194,11 +194,11 @@ test "SpscRing concurrent producer/consumer stays memory-safe and terminates" {
     // the consumer makes progress to N (the final slot is never under contention
     // once the producer stops, so the loop terminates).
     var last: u64 = 0;
-    while (last < N) {
+    while (last < test_count) {
         const value = queue.consume() catch |err| switch (err) {
             error.QueueEmpty, error.ProducerOverrun => continue, // transient, retry
         };
-        try std.testing.expect(value >= 1 and value <= N);
+        try std.testing.expect(value >= 1 and value <= test_count);
         last = value;
     }
 }

@@ -1,87 +1,22 @@
+//! PS/2 keyboard driver: reads scancodes off the hardware in the IRQ handler,
+//! parses them (see `scancodes.zig`), buffers key events in a lock-free queue,
+//! and exposes them to consumers as `ScanCodeEvent`s / characters.
+
 const io = @import("../arch.zig").io;
-const spcs = @import("../lib/data/spsc.zig");
+const spsc = @import("../lib/data/spsc.zig");
+const scancodes = @import("scancodes.zig");
+const arch = @import("../arch.zig");
 
-/// Keyboard scancodes (PS/2 scancode set 1, make codes).
-/// Non-exhaustive: unmapped scancodes keep their raw value.
-pub const PhysicalKeyCode = enum(u8) {
-    // zlinter-disable field_naming - field names mirror key scancodes
-    KEY_ESC = 0x01,
-    KEY_1 = 0x02,
-    KEY_2 = 0x03,
-    KEY_3 = 0x04,
-    KEY_4 = 0x05,
-    KEY_5 = 0x06,
-    KEY_6 = 0x07,
-    KEY_7 = 0x08,
-    KEY_8 = 0x09,
-    KEY_9 = 0x0A,
-    KEY_0 = 0x0B,
-    KEY_MINUS = 0x0C,
-    KEY_EQUAL = 0x0D,
-    KEY_BACKSPACE = 0x0E,
-    KEY_TAB = 0x0F,
-    KEY_Q = 0x10,
-    KEY_W = 0x11,
-    KEY_E = 0x12,
-    KEY_R = 0x13,
-    KEY_T = 0x14,
-    KEY_Y = 0x15,
-    KEY_U = 0x16,
-    KEY_I = 0x17,
-    KEY_O = 0x18,
-    KEY_P = 0x19,
-    KEY_LEFTBRACE = 0x1A,
-    KEY_RIGHTBRACE = 0x1B,
-    KEY_ENTER = 0x1C,
-    KEY_LEFTCTRL = 0x1D,
-    KEY_A = 0x1E,
-    KEY_S = 0x1F,
-    KEY_D = 0x20,
-    KEY_F = 0x21,
-    KEY_G = 0x22,
-    KEY_H = 0x23,
-    KEY_J = 0x24,
-    KEY_K = 0x25,
-    KEY_L = 0x26,
-    KEY_SEMICOLON = 0x27,
-    KEY_APOSTROPHE = 0x28,
-    KEY_GRAVE = 0x29,
-    KEY_LEFTSHIFT = 0x2A,
-    KEY_BACKSLASH = 0x2B,
-    KEY_Z = 0x2C,
-    KEY_X = 0x2D,
-    KEY_C = 0x2E,
-    KEY_V = 0x2F,
-    KEY_B = 0x30,
-    KEY_N = 0x31,
-    KEY_M = 0x32,
-    KEY_COMMA = 0x33,
-    KEY_DOT = 0x34,
-    KEY_SLASH = 0x35,
-    KEY_RIGHTSHIFT = 0x36,
-    KEY_LEFTALT = 0x38,
-    KEY_SPACE = 0x39,
-    KEY_CAPSLOCK = 0x3A,
-    KEY_F1 = 0x3B,
-    KEY_F2 = 0x3C,
-    KEY_F3 = 0x3D,
-    KEY_F4 = 0x3E,
-    KEY_F5 = 0x3F,
-    KEY_F6 = 0x40,
-    KEY_F7 = 0x41,
-    KEY_F8 = 0x42,
-    KEY_F9 = 0x43,
-    KEY_F10 = 0x44,
-    KEY_F11 = 0x57,
-    KEY_F12 = 0x58,
-    _,
-    // zlinter-enable field_naming
-};
+const InterruptFrame = arch.idt.InterruptFrame;
+const KeyEvent = scancodes.KeyEvent;
+const pic = arch.pic;
+const registerInterruptHandler = arch.idt.registerInterruptHandler;
 
-pub const RawCodeEvent = struct {
-    keycode: PhysicalKeyCode,
-    pressed: bool,
-};
+pub const PhysicalKeyCode = scancodes.PhysicalKeyCode;
+
+// ============================================================================
+// Public event types
+// ============================================================================
 
 pub const Modifiers = packed struct {
     shift: bool,
@@ -111,37 +46,52 @@ pub const ScanCodeEvent = packed struct {
     state: Metadata = .empty,
 };
 
-const buffer_size: usize = 256;
-var buffer: [buffer_size]RawCodeEvent = undefined;
+// ============================================================================
+// Driver state
+// ============================================================================
 
-const State = struct {
-    queue: spcs.SpscRing(RawCodeEvent),
+const buffer_size: usize = 256;
+var buffer: [buffer_size]KeyEvent = undefined;
+
+const Keyboard = struct {
+    parser: scancodes.Parser = .{},
+    queue: spsc.SpscRing(KeyEvent) = .initWithBuffer(&buffer),
     last_modifier: Modifiers = .empty,
 };
 
-var state: State = .{
-    .queue = spcs.SpscRing(RawCodeEvent).initWithBuffer(&buffer),
-};
+var state: Keyboard = .{};
 
-pub fn onKeyboardInterrupt() void {
-    const scancode = io.inb(0x60);
+// ============================================================================
+// IRQ side (producer)
+// ============================================================================
 
-    const pressed = (scancode & 0x80) == 0;
-    const keycode: PhysicalKeyCode = @enumFromInt(scancode & 0x7F);
-
-    const event: RawCodeEvent = .{
-        .keycode = keycode,
-        .pressed = pressed,
-    };
-
-    state.queue.emit(event);
+fn onKeyboardInterrupt() void {
+    const code = io.inb(0x60);
+    if (state.parser.feed(code)) |event| {
+        state.queue.emit(event);
+    }
 }
 
-fn updateModifiers(event: RawCodeEvent) void {
+fn keyboardInterruptHandler(frame: *const InterruptFrame) void {
+    _ = frame;
+    onKeyboardInterrupt();
+    pic.eoi(1);
+}
+
+pub fn registerKeyboardInterruptHandler() void {
+    registerInterruptHandler(33, keyboardInterruptHandler);
+}
+
+// ============================================================================
+// Event API (consumer)
+// ============================================================================
+
+fn updateModifiers(event: KeyEvent) void {
+    // zlinter-disable-next-line require_exhaustive_enum_switch - only modifier keys are relevant; all other keys are intentionally ignored.
     switch (event.keycode) {
-        .KEY_LEFTSHIFT, .KEY_RIGHTSHIFT => state.last_modifier.shift = event.pressed,
-        .KEY_LEFTCTRL => state.last_modifier.ctrl = event.pressed,
-        .KEY_LEFTALT => state.last_modifier.alt = event.pressed,
+        .KEY_LSHIFT, .KEY_RSHIFT => state.last_modifier.shift = event.pressed,
+        .KEY_LCTRL, .KEY_RCTRL => state.last_modifier.ctrl = event.pressed,
+        .KEY_LALT, .KEY_RALT => state.last_modifier.alt = event.pressed,
         else => {},
     }
 }
@@ -186,8 +136,13 @@ pub fn readCharEvent() ?u8 {
     return convertKeycodeToChar(event);
 }
 
+// ============================================================================
+// Character translation
+// ============================================================================
+
 /// This function is not handling all the available ascii characters.
 pub fn convertKeycodeToChar(event: ScanCodeEvent) ?u8 {
+    // zlinter-disable-next-line require_exhaustive_enum_switch - only printable/whitespace keys map to a char; the rest return null via `else`.
     switch (event.keycode) {
         .KEY_ENTER => return '\n',
         .KEY_COMMA => return ',',
