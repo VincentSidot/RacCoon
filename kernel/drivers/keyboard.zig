@@ -101,7 +101,7 @@ pub fn readRawEvent() ?ScanCodeEvent {
 
     const raw_event = state.queue.consumeExt(&has_missed_events) catch |err| switch (err) {
         error.QueueEmpty => return null,
-        error.ProducerOverrun => return null, // TODO: we should probably handle this case better
+        error.ProducerOverrun => return null, // TODO#4 (low): we should probably handle this case better
     };
 
     const metadata: Metadata = .{

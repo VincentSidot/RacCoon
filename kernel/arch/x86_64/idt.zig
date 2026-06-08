@@ -27,8 +27,8 @@ const IdtEntry = packed struct {
     // index 0: null
     // index 1: kernel code segment <-- this is the one we want to use for our interrupt handlers
     // index 2: kernel data segment
-    // TODO: I need to be able to ensure alignment with the stage2.s gdt64 setup
-    const kernel_code_selector: u16 = 0x08; // TODO: This should be defined in the GDT module
+    // TODO#2 (medium): I need to be able to ensure alignment with the stage2.s gdt64 setup
+    const kernel_code_selector: u16 = 0x08; // TODO#3 (medium): This should be defined in the GDT module
 
     fn setGate(vector: u8, handler: usize) void {
         idt[vector] = .{

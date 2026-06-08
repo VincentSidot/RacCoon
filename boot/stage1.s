@@ -13,7 +13,7 @@ STAGE2_LOAD_ADDRESS = 0x0000_8000
 ; VBE Constants
 VBE_MODE = 0x142  ; Current QEMU/BIOS mode observed as 640x480x32bpp
 ; VBE_MODE = 0x112 ; Current QEMU/BIOS mode observed as 640x480x24bpp
-; TODO: write a proper query vbe mode function. (but painful in stage1 since asm 16-bit is not straightforward to write and debug)
+; TODO#1 (medium): write a proper query vbe mode function. (but painful in stage1 since asm 16-bit is not straightforward to write and debug)
 VBE_LINEAR_FLAG = 0x4000
 
 VBE_MODE_INFO_ADDRESS = 0x6000

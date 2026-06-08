@@ -184,6 +184,8 @@ fn onGeneralProtectionFault(frame: *const InterruptFrame) void {
 
 fn onPageFault(frame: *const InterruptFrame) void {
     _ = frame;
+
+    // TODO#6 (medium): Move this assmembly code into arch to allow proper multiplatform support.
     var fault_address: usize = undefined;
     asm volatile (
         \\ movq %cr2, %[addr]

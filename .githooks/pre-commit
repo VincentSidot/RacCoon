@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+ticket="$repo_root/scripts/ticket.py"
+
+# Keep the committed `file:line` references current, then fail the commit on
+# any ticket/marker inconsistency. Promotion stays manual (`ticket.py promote`).
+python3 "$ticket" sync --stage
+python3 "$ticket" check
