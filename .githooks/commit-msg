@@ -24,6 +24,14 @@ if [[ "$action" == "WIP" ]]; then
     exit 0
 fi
 
+# The kernel build toolchain (objcopy, fasm, GNU stat) only exists in the
+# Linux build image, so on macOS we route `zig` through the docker wrapper.
+# On Linux we use the native toolchain directly.
+repo_root="$(git rev-parse --show-toplevel)"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    zig() { "$repo_root/scripts/zig.sh" "$@"; }
+fi
+
 echo "Running zig build lint"
 zig build lint
 
